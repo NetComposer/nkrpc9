@@ -58,38 +58,6 @@ event(SrvId, Data, Req, State) ->
 
 
 
-
-
-% Redirect .../test1/
-%%request(<<"GET">>, [<<>>], _Req) ->
-%%    {redirect, "/index.html"};
-%%
-%%% Redirect .../test1
-%%request(<<"GET">>, [], _Req) ->
-%%    {redirect, "/index.html"};
-%%
-%%request(<<"GET">>, _Paths, _Req) ->
-%%    lager:error("NKLOG STATIC ~p", [_Paths]),
-%%    {cowboy_static, {priv_dir, nkserver_rpc9, "/www"}};
-%%
-%%request(<<"POST">>, [<<"test-a">>], #{content_type:=CT}=Req) ->
-%%    {ok, Body, Req2} = nkserver_rpc9_server_http:get_body(Req, #{parse=>true}),
-%%    Qs = nkserver_rpc9_server_http:get_qs(Req),
-%%    Reply = nklib_json:encode(#{qs=>maps:from_list(Qs), ct=>CT, body=>Body}),
-%%    {http, 200, #{<<"header1">> => 1}, Reply, Req2};
-
-request(_Method, _Path, _Req) ->
-    lager:error("NKLOG OTHER"),
-    continue.
-
-
-
-
-
-
-
-
-
 %% @private
 request_parse(SrvId, Cmd, Data, Req, State) ->
     case ?CALL_SRV(SrvId, rpc9_parse, [Cmd, Data, Req, State]) of
