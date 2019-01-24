@@ -48,12 +48,14 @@ plugin_config(SrvId, Config, #{class:=?PACKAGE_CLASS_RPC9_SRV}=Service) ->
         cmd_timeout => {integer, 5, none},
         ext_cmd_timeout => {integer, 5, none},
         http_max_body => {integer, 1024, none},
+        user_state => map,
         '__mandatory' => [url],
         '__defaults' => #{
             ping_interval => 10000,
             cmd_timeout => 10000,
             ext_cmd_timeout => 180000,
-            http_max_body => 10*1024*1024
+            http_max_body => 10*1024*1024,
+            user_state => #{}
         }
     },
     case nklib_syntax:parse(Config, Syntax) of
@@ -118,7 +120,8 @@ get_listen(SrvId, #{url:=Url}=Config, _Service) ->
                 id => {nkserver_rpc9_server, SrvId},
                 class => {?PACKAGE_CLASS_RPC9_SRV, SrvId},
                 debug => lists:member(nkpacket, Debug),
-                get_headers => [<<"user-agent">>]
+                get_headers => [<<"user-agent">>],
+                user_state => maps:get(user_state, Config)
             },
             do_get_listen(Conns, Opts, []);
         {error, Error} ->

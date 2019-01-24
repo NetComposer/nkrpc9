@@ -260,13 +260,15 @@ conn_init(NkPort) ->
     pg2:join({nkserver_rpc9_server, SrvId}, self()),
     OpTime = nkserver:get_plugin_config(SrvId, nkserver_rpc9_server, cmd_timeout),
     ExtTime = nkserver:get_plugin_config(SrvId, nkserver_rpc9_server, ext_cmd_timeout),
+    {ok, UserState} = nkpacket:get_user_state(NkPort),
     State1 = #state{
         srv_id = SrvId,
         session_id = SessId,
         local = Local,
         remote = Remote,
         op_time = OpTime,
-        ext_op_time = ExtTime
+        ext_op_time = ExtTime,
+        user_state = UserState
     },
     set_debug(State1),
     ?LLOG(info, "new connection (~s, ~p)", [Remote, self()], State1),

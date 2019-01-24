@@ -46,10 +46,12 @@ plugin_config(_SrvId, Config, #{class:=?PACKAGE_CLASS_RPC9_CLIENT}) ->
         debug => {list, {atom, [nkpacket, protocol, msgs]}},
         cmd_timeout => {integer, 5, none},
         ext_cmd_timeout => {integer, 5, none},
+        user_state => map,
         '__mandatory' => [url],
         '__defaults' => #{
             cmd_timeout => 10000,
-            ext_cmd_timeout => 180000
+            ext_cmd_timeout => 180000,
+            user_state => #{}
         }
     },
     case nklib_syntax:parse(Config, Syntax) of
@@ -79,6 +81,7 @@ plugin_start(SrvId, #{url:=Url}=Config, Service) ->
         id => {nkserver_rpc9_client, SrvId},
         class => {?PACKAGE_CLASS_RPC9_CLIENT, SrvId},
         idle_timeout => 60000,
+        user_state => maps:get(user_state, Config),
         debug => lists:member(nkpacket, Debug)
     },
     Spec = #{
