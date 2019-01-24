@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([msg/1]).
 -export([request/3]).
--export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/3]).
+-export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/4]).
 -export([rpc9_subscribe/2, rpc9_unsubscribe/2]).
 -export([rpc9_init/3, rpc9_handle_call/3, rpc9_handle_cast/2, rpc9_handle_info/2,
          rpc9_terminate/2]).
@@ -61,6 +61,7 @@ msg(_)   		           -> continue.
 %% ===================================================================
 
 -type cmd() :: nkserver_rpc9_server:cmd().
+-type event() :: nkserver_rpc9_server:event().
 -type data() :: nkserver_rpc9_server:data().
 -type state() :: nkapi_server:user_state().
 -type continue() :: nkserver_callbacks:continue().
@@ -135,11 +136,11 @@ rpc9_request(_Cmd, _Data, _Req, State) ->
 
 
 %% @doc Called when then client sends a request
--spec rpc9_event(data(), request(), state()) ->
+-spec rpc9_event(event(), data(), request(), state()) ->
     {ok, state()} |
     {error, nkserver:msg(), state()}.
 
-rpc9_event(_Data, _Req, State) ->
+rpc9_event(_Event, _Data, _Req, State) ->
     {ok, State}.
 
 

@@ -26,7 +26,7 @@
 
 -export([start/0, stop/0]).
 -export([to_server/0, to_client/0, server_times/0, client_times/0, http/0]).
--export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/3]).
+-export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/4]).
 
 -dialyzer({nowarn_function, start/0}).
 
@@ -96,8 +96,8 @@ to_server() ->
 
     % Send event to server
     Ref = make_ref(),
-    Event = #{class=>event1, ref=>base64:encode(term_to_binary({self(), Ref}))},
-    ok = nkserver_rpc9_client:send_event(client, Event),
+    Event = #{ref=>base64:encode(term_to_binary({self(), Ref}))},
+    ok = nkserver_rpc9_client:send_event(client, event1, Event),
     receive Ref -> ok after 1000 -> error(?LINE) end,
     ok.
 
@@ -142,8 +142,8 @@ to_client() ->
 
     % Send event to client
     Ref = make_ref(),
-    Event = #{class=>event2, ref=>base64:encode(term_to_binary({self(), Ref}))},
-    ok = nkserver_rpc9_server:send_event(server, Event),
+    Event = #{ref=>base64:encode(term_to_binary({self(), Ref}))},
+    ok = nkserver_rpc9_server:send_event(server, event2, Event),
     receive {Ref, <<"name2">>} -> ok after 1000 -> error(?LINE) end,
     ok.
 
@@ -217,8 +217,11 @@ http_request(Cmd, Data, Hds) ->
 rpc9_parse(<<"login">>, _Data, _Req, State) ->
     {syntax, #{name => binary, '__mandatory' => [name]}, State};
 
-rpc9_parse(<<"event">>, _Data, _Req, State) ->
-    {syntax, #{class => binary, ref => binary, '__mandatory' => [class]}, State};
+rpc9_parse(<<"event1">>, _Data, _Req, State) ->
+    {syntax, #{ref => binary, '__mandatory' => [class]}, State};
+
+rpc9_parse(<<"event2">>, _Data, _Req, State) ->
+    {syntax, #{ref => binary, '__mandatory' => [class]}, State};
 
 rpc9_parse(<<"cmd10">>, _Data, _Req, State) ->
     {syntax, #{data => map, '__mandatory' => [data]}, State};
@@ -345,16 +348,16 @@ rpc9_request(Cmd, Data, Req, _State) ->
 
 
 %% @doc
-rpc9_event(#{class:=<<"event1">>, ref:=Bin}, #{srv:=server}, State) ->
+rpc9_event(<<"event1">>, #{ref:=Bin}, #{srv:=server}, State) ->
     {Pid, Ref} = binary_to_term(base64:decode(Bin)),
     Pid ! Ref,
     {ok, State};
 
-rpc9_event(#{class:=<<"event2">>, ref:=Bin}, #{srv:=client}, #{user:=User}=State) ->
+rpc9_event(<<"event2">>, #{ref:=Bin}, #{srv:=client}, #{user:=User}=State) ->
     {Pid, Ref} = binary_to_term(base64:decode(Bin)),
     Pid ! {Ref, User},
     {ok, State};
 
-rpc9_event(Data, Req, _State) ->
-    lager:error("NKLOG EV ~p ~p ~p", [Data, Req]),
+rpc9_event(Event, _Data, Req, _State) ->
+    lager:error("NKLOG EV ~p ~p ~p", [Event, Req]),
     continue.

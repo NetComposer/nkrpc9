@@ -23,7 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([connect/3, stop/1]).
--export([send_request/3, send_async_request/3, reply/3, send_event/2]).
+-export([send_request/3, send_async_request/3, reply/3, send_event/3]).
 -export([get_all_started/1, get_local_started/1]).
 
 -export([transports/1, default_port/1]).
@@ -102,6 +102,11 @@ send_async_request(Pid, Cmd, Data) when is_map(Data); is_list(Data) ->
     gen_server:cast(Pid, {rpc9_send_req, nklib_util:to_binary(Cmd), Data}).
 
 
+% Send an event to the client
+send_event(Pid, Event, Data) ->
+    gen_server:cast(Pid, {rpc9_send_event, Event, Data}).
+
+
 %% doc
 reply(Pid, TId, {login, UserId, Reply}) when is_map(Reply); is_list(Reply) ->
     gen_server:cast(Pid, {rpc9_reply_login, nklib_util:to_binary(UserId), Reply, TId});
@@ -116,9 +121,6 @@ reply(Pid, TId, {ack, AckPid}) ->
     gen_server:cast(Pid, {rpc9_reply_ack, AckPid, TId}).
 
 
-% Send an event to the client
-send_event(Pid, Event) ->
-    gen_server:cast(Pid, {rpc9_send_event, Event}).
 
 
 %% @private
@@ -221,9 +223,6 @@ conn_parse(close, _NkPort, State) ->
 conn_parse({text, Text}, NkPort, State) ->
     Msg = nklib_json:decode(Text),
     case Msg of
-        #{<<"cmd">> := <<"event">>, <<"data">> := Data} ->
-            ?MSG("received event ~s", [Data], State),
-            process_server_event(Data, State);
         #{<<"cmd">> := <<"ping">>, <<"tid">> := TId} ->
             send_reply_ok(#{}, TId, NkPort, State);
         #{<<"cmd">> := Cmd, <<"tid">> := TId} ->
@@ -231,6 +230,10 @@ conn_parse({text, Text}, NkPort, State) ->
             Cmd2 = get_cmd(Cmd, Msg),
             Data = maps:get(<<"data">>, Msg, #{}),
             process_server_req(Cmd2, Data, TId, NkPort, State);
+        #{<<"event">> := Event} ->
+            ?MSG("received event ~s", [Event], State),
+            Data = maps:get(<<"data">>, Msg, #{}),
+            process_server_event(Event, Data, State);
         #{<<"result">> := Result, <<"tid">> := TId} when is_binary(Result) ->
             case extract_op(TId, State) of
                 {Trans, State2} ->
@@ -297,8 +300,8 @@ conn_handle_call(Msg, From, _NkPort, State) ->
 conn_handle_cast({rpc9_send_req, Cmd, Data}, NkPort, State) ->
     send_request(Cmd, Data, undefined, NkPort, State);
 
-conn_handle_cast({rpc9_send_event, Data}, NkPort, State) ->
-    send_event(Data, NkPort, State);
+conn_handle_cast({rpc9_send_event, Event, Data}, NkPort, State) ->
+    send_event(Event, Data, NkPort, State);
 
 conn_handle_cast({rpc9_reply_ok, Reply, TId}, NkPort, State) ->
     case extract_op(TId, State) of
@@ -395,9 +398,9 @@ process_server_req(Cmd, Data, TId, NkPort, State) ->
 
 
 %% @private
-process_server_event(Data, #state{srv_id=SrvId, user_state=UserState}=State) ->
+process_server_event(Event, Data, #state{srv_id=SrvId, user_state=UserState}=State) ->
     Req = make_req(<<>>, State),
-    case nkserver_rpc9_process:event(SrvId, Data, Req, UserState) of
+    case nkserver_rpc9_process:event(SrvId, Event, Data, Req, UserState) of
         {ok, UserState2} ->
             {ok, State#state{user_state=UserState2}};
         {error, _Error, UserState2} ->
@@ -592,9 +595,9 @@ send_ack(TId, Meta, NkPort, State) ->
 
 
 %% @private
-send_event(Data, NkPort, State) ->
+send_event(Event, Data, NkPort, State) ->
     Msg = #{
-        cmd => <<"event">>,
+        event => Event,
         data => Data
     },
     send(Msg, NkPort, State).

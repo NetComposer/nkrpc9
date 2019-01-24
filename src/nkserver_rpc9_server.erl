@@ -23,8 +23,8 @@
 
 -export([start_link/2, get_sup_spec/2]).
 -export([stop/1, update/2]).
--export([send_request/3, send_async_request/3, send_event/2, reply/2]).
--export_type([request/0, reply/0, async_reply/0, event/0]).
+-export([send_request/3, send_async_request/3, send_event/3, reply/2]).
+-export_type([id/0, cmd/0, event/0, data/0, request/0, reply/0, async_reply/0]).
 
 -include("nkserver_rpc9.hrl").
 
@@ -34,6 +34,12 @@
 %% ===================================================================
 
 -type id() :: nkserver:id().
+
+-type cmd() :: binary().
+
+-type event() :: binary().
+
+-type data() :: map().
 
 -type config() :: map().
 
@@ -60,9 +66,6 @@
     {ok, reply(), request()} |
     {error, nkserver_msg:msg(), request()} |
     {ack, pid()|undefined, request()}.
-
-
--type event() :: map().
 
 
 %% ===================================================================
@@ -124,10 +127,10 @@ send_async_request(SrvId, Cmd, Data) ->
 
 
 %% @doc Send an event to the server
-send_event(SrvId, Event) ->
+send_event(SrvId, Event, Data) ->
     case get_pid(SrvId) of
         Pid when is_pid(Pid) ->
-            nkserver_rpc9_server_protocol:send_event(Pid, Event);
+            nkserver_rpc9_server_protocol:send_event(Pid, Event, Data);
         undefined ->
             {error, no_transports}
     end.

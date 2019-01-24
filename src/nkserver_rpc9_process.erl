@@ -21,7 +21,7 @@
 %% @doc
 -module(nkserver_rpc9_process).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
--export([request/5, event/4]).
+-export([request/5, event/5]).
 -include_lib("nkserver/include/nkserver.hrl").
 
 
@@ -53,14 +53,24 @@ request(SrvId, Cmd, Data, Req, State) ->
 
 
 %% @doc
-event(SrvId, Data, Req, State) ->
-    event_parse(SrvId, Data, Req, State).
+event(SrvId, Event, Data, Req, State) ->
+    event_parse(SrvId, Event, Data, Req, State).
 
 
 
 %% @private
 request_parse(SrvId, Cmd, Data, Req, State) ->
     case ?CALL_SRV(SrvId, rpc9_parse, [Cmd, Data, Req, State]) of
+        {syntax, Syntax} ->
+            case nklib_syntax:parse(Data, Syntax) of
+                {ok, Data2, []} ->
+                    request_allow(SrvId, Cmd, Data2, Req, State);
+                {ok, Data2, Unknown} ->
+                    Req2 = Req#{unknown_fields => Unknown},
+                    request_allow(SrvId, Cmd, Data2, Req2, State);
+                {error, Error} ->
+                    {error, Error, State}
+            end;
         {syntax, Syntax, State2} ->
             case nklib_syntax:parse(Data, Syntax) of
                 {ok, Data2, []} ->
@@ -71,8 +81,12 @@ request_parse(SrvId, Cmd, Data, Req, State) ->
                 {error, Error} ->
                     {error, Error, State2}
             end;
+        {ok, Data2} ->
+            request_allow(SrvId, Cmd, Data2, Req, State);
         {ok, Data2, State2} ->
             request_allow(SrvId, Cmd, Data2, Req, State2);
+        {error, Error} ->
+            {error, Error, State};
         {error, Error, State2} ->
             {error, Error, State2}
     end.
@@ -95,6 +109,14 @@ request_allow(SrvId, Cmd, Data, Req, State) ->
 request_process(SrvId, Cmd, Data, Req, State) ->
     ?DEBUG("request allowed", [], Req),
     case ?CALL_SRV(SrvId, rpc9_request, [Cmd, Data, Req, State]) of
+        {login, UserId, Reply} ->
+            Reply2 = case maps:find(unknown_fields, Req) of
+                {ok, Fields} ->
+                    Reply#{unknown_fields=>Fields};
+                error ->
+                    Reply
+            end,
+            {login, UserId, Reply2, State};
         {login, UserId, Reply, State2} ->
             Reply2 = case maps:find(unknown_fields, Req) of
                 {ok, Fields} ->
@@ -111,35 +133,64 @@ request_process(SrvId, Cmd, Data, Req, State) ->
                     Reply
             end,
             {reply, Reply2, State2};
+        {reply, Reply} ->
+            Reply2 = case maps:find(unknown_fields, Req) of
+                {ok, Fields} ->
+                    Reply#{unknown_fields=>Fields};
+                error ->
+                    Reply
+            end,
+            {reply, Reply2, State};
+        ack ->
+            {ack, undefined, State};
+        {ack, Pid} ->
+            {ack, Pid, State};
         {ack, Pid, State2} ->
             {ack, Pid, State2};
+        {error, Error} ->
+            {error, Error};
         {error, Error, State2} ->
             {error, Error, State2}
     end.
 
 
 %% @private
-event_parse(SrvId, Data, Req, State) ->
-    case ?CALL_SRV(SrvId, rpc9_parse, [<<"event">>, Data, Req, State]) of
+event_parse(SrvId, Event, Data, Req, State) ->
+    case ?CALL_SRV(SrvId, rpc9_parse, [Event, Data, Req, State]) of
         {syntax, Syntax, State2} ->
             case nklib_syntax:parse(Data, Syntax) of
                 {ok, Data2, _} ->
-                    event_process(SrvId, Data2, Req, State2);
+                    event_process(SrvId, Event, Data2, Req, State2);
                 {error, Error} ->
                     {error, Error, State2}
             end;
+        {syntax, Syntax} ->
+            case nklib_syntax:parse(Data, Syntax) of
+                {ok, Data2, _} ->
+                    event_process(SrvId, Event, Data2, Req, State);
+                {error, Error} ->
+                    {error, Error, State}
+            end;
+        {ok, Data2} ->
+            event_process(SrvId, Event, Data2, Req, State);
         {ok, Data2, State2} ->
-            event_process(SrvId, Data2, Req, State2);
+            event_process(SrvId, Event, Data2, Req, State2);
+        {error, Error} ->
+            {error, Error, State};
         {error, Error, State2} ->
             {error, Error, State2}
     end.
 
 
 %% @private
-event_process(SrvId, Data, Req, State) ->
-    case ?CALL_SRV(SrvId, rpc9_event, [Data, Req, State]) of
+event_process(SrvId, Event, Data, Req, State) ->
+    case ?CALL_SRV(SrvId, rpc9_event, [Event, Data, Req, State]) of
+        ok ->
+            {ok, State};
         {ok, State2} ->
             {ok, State2};
+        {error, Error} ->
+            {error, Error};
         {error, Error, State2} ->
             {error, Error, State2}
     end.
