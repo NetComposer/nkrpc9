@@ -19,16 +19,16 @@
 %% -------------------------------------------------------------------
 
 %% @doc NkSERVER
--module(nkserver_rpc9_app).
+-module(nkrpc9_app).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -behaviour(application).
 
 -export([start/0, start/2, stop/1]).
 -export([get/1, get/2, put/2, del/1]).
 
--include("nkserver_rpc9.hrl").
+-include("nkrpc9.hrl").
 
--define(APP, nkserver_rpc9).
+-define(APP, nkrpc9).
 -compile({no_auto_import, [get/1, put/2]}).
 
 %% ===================================================================
@@ -49,11 +49,11 @@ start(_Type, _Args) ->
     },
     case nklib_config:load_env(?APP, Syntax) of
         {ok, _} ->
-            {ok, Pid} = nkserver_rpc9_sup:start_link(),
+            {ok, Pid} = nkrpc9_sup:start_link(),
             {ok, Vsn} = application:get_key(nkserver, vsn),
             lager:info("NkSERVER RPC9 v~s has started.", [Vsn]),
-            nkserver_util:register_package_class(?PACKAGE_CLASS_RPC9_SRV, nkserver_rpc9_server),
-            nkserver_util:register_package_class(?PACKAGE_CLASS_RPC9_CLIENT, nkserver_rpc9_client),
+            nkserver_util:register_package_class(?PACKAGE_CLASS_RPC9_SRV, nkrpc9_server),
+            nkserver_util:register_package_class(?PACKAGE_CLASS_RPC9_CLIENT, nkrpc9_client),
             {ok, Pid};
         {error, Error} ->
             lager:error("Error parsing config: ~p", [Error]),

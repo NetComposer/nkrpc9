@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc
--module(nkserver_rpc9_sample).
+-module(nkrpc9_sample).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -include_lib("nkserver/include/nkserver_module.hrl").
@@ -37,7 +37,7 @@
 
 %% @doc Starts the service
 start() ->
-    {ok, _} = nkserver_rpc9_server:start_link(server, #{
+    {ok, _} = nkrpc9_server:start_link(server, #{
         use_module => ?MODULE,
         url => "https://node:9010/test1, wss:node:9010/test1/ws;idle_timeout=60000",
         opts => #{
@@ -54,7 +54,7 @@ start() ->
         debug => [nkpacket, protocol, msgs]
     }),
     timer:sleep(500),
-    {ok, _} = nkserver_rpc9_client:start_link(client, #{
+    {ok, _} = nkrpc9_client:start_link(client, #{
         use_module => ?MODULE,
         url => "wss:127.0.0.1:9010/test1/ws",
         cmd_timeout => 500,
@@ -66,84 +66,84 @@ start() ->
 
 %% @doc Stops the service
 stop() ->
-    nkserver_rpc9_client:stop(client),
-    nkserver_rpc9_server:stop(server).
+    nkrpc9_client:stop(client),
+    nkrpc9_server:stop(server).
 
 
 
 to_server() ->
     % Command not yet authorized
     {ok, <<"error">>, #{<<"code">>:=<<"unauthorized">>}} =
-        nkserver_rpc9_client:send_request(client, cmd1, #{}),
+        nkrpc9_client:send_request(client, cmd1, #{}),
 
     % Successful login
     {ok, <<"ok">>, #{<<"meta">>:=2, <<"unknown_fields">>:=[<<"other">>]}} =
-        nkserver_rpc9_client:send_request(client, login, #{name=>name1, other=>1}),
-    [{ServerSess1, #{}, ServerPid1}] = nkserver_rpc9_server_protocol:find_user(<<"name1">>),
-    {ok, <<"name1">>, ServerPid1} = nkserver_rpc9_server_protocol:find_session(ServerSess1),
+        nkrpc9_client:send_request(client, login, #{name=>name1, other=>1}),
+    [{ServerSess1, undefined, ServerPid1}] = nkrpc9_server_protocol:find_user(<<"name1">>),
+    {ok, <<"name1">>, ServerPid1} = nkrpc9_server_protocol:find_session(ServerSess1),
 
     % Missing field
     {ok, <<"error">>, #{<<"code">>:=<<"field_missing">>, <<"error">>:=<<"Missing field: 'name'">>}} =
-        nkserver_rpc9_client:send_request(client, login, #{name1=>name1, other=>1}),
+        nkrpc9_client:send_request(client, login, #{name1=>name1, other=>1}),
 
     % Re-login with a different user
     {ok, <<"error">>, #{<<"code">>:=<<"invalid_login_request">>}} =
-        nkserver_rpc9_client:send_request(client, login, #{name=>name2}),
+        nkrpc9_client:send_request(client, login, #{name=>name2}),
 
     % Command is now authorized
     {ok, <<"ok">>, #{<<"out">>:=1}} =
-        nkserver_rpc9_client:send_request(client, cmd1, #{}),
+        nkrpc9_client:send_request(client, cmd1, #{}),
 
     % Send event to server
     Ref = make_ref(),
     Event = #{ref=>base64:encode(term_to_binary({self(), Ref}))},
-    ok = nkserver_rpc9_client:send_event(client, event1, Event),
+    ok = nkrpc9_client:send_event(client, event1, Event),
     receive Ref -> ok after 1000 -> error(?LINE) end,
     ok.
 
 
 client_times() ->
-    {ok, <<"ok">>, #{}} = nkserver_rpc9_client:send_request(client, login, #{name=>name1}),
-    [Pid1] = nkserver_rpc9_client_protocol:get_local_started(client),
+    {ok, <<"ok">>, #{}} = nkrpc9_client:send_request(client, login, #{name=>name1}),
+    [Pid1] = nkrpc9_client_protocol:get_local_started(client),
     {ok, <<"error">>, #{<<"code">>:=<<"timeout">>}} =
-        nkserver_rpc9_client:send_request(client, slow1, #{}),
+        nkrpc9_client:send_request(client, slow1, #{}),
     % The client has stopped, supervisor will start it again
     % Ensure it stopped
     timer:sleep(500),
-    [Pid2] = nkserver_rpc9_client_protocol:get_local_started(client),
+    [Pid2] = nkrpc9_client_protocol:get_local_started(client),
     false = Pid1 == Pid2,
 
-    {ok, <<"ok">>, #{}} = nkserver_rpc9_client:send_request(client, login, #{name=>name1}),
-    {ok, <<"ok">>, #{}} = nkserver_rpc9_client:send_request(client, slow2, #{}),
+    {ok, <<"ok">>, #{}} = nkrpc9_client:send_request(client, login, #{name=>name1}),
+    {ok, <<"ok">>, #{}} = nkrpc9_client:send_request(client, slow2, #{}),
 
     {ok, <<"error">>, #{<<"code">>:=<<"timeout">>}} =
-        nkserver_rpc9_client:send_request(client, slow3, #{}),
+        nkrpc9_client:send_request(client, slow3, #{}),
     timer:sleep(500),
-    [Pid3] = nkserver_rpc9_client_protocol:get_local_started(client),
+    [Pid3] = nkrpc9_client_protocol:get_local_started(client),
     false = Pid2 == Pid3,
 
-    {ok, <<"ok">>, #{}} = nkserver_rpc9_client:send_request(client, login, #{name=>name1}),
+    {ok, <<"ok">>, #{}} = nkrpc9_client:send_request(client, login, #{name=>name1}),
     % The server will monitor the ack process, and it will fail
-    {ok, <<"error">>, #{<<"code">>:=<<"process_down">>}} = nkserver_rpc9_client:send_request(client, slow4, #{}),
+    {ok, <<"error">>, #{<<"code">>:=<<"process_down">>}} = nkrpc9_client:send_request(client, slow4, #{}),
     ok.
 
 
 to_client() ->
     {ok, <<"error">>, #{<<"error">>:=<<"Missing field: 'data'">>}} =
-        nkserver_rpc9_server:send_request(server, cmd10, #{name=>name1}),
+        nkrpc9_server:send_request(server, cmd10, #{name=>name1}),
     {ok, <<"error">>, #{<<"code">>:=<<"unauthorized">>}} =
-        nkserver_rpc9_server:send_request(server, cmd10, #{data=>#{a=>1}}),
+        nkrpc9_server:send_request(server, cmd10, #{data=>#{a=>1}}),
     {ok, <<"ok">>, #{}} =
-        nkserver_rpc9_server:send_request(server, login, #{name=>name2}),
+        nkrpc9_server:send_request(server, login, #{name=>name2}),
     {ok, <<"ok">>, #{<<"data2">>:=#{<<"a">>:=1}}} =
-        nkserver_rpc9_server:send_request(server, cmd10, #{data=>#{a=>1}}),
+        nkrpc9_server:send_request(server, cmd10, #{data=>#{a=>1}}),
     {ok, <<"ok">>, #{<<"data2">>:=#{<<"a">>:=1}}} =
-        nkserver_rpc9_server:send_request(server, cmd10, #{data=>#{a=>1}}),
+        nkrpc9_server:send_request(server, cmd10, #{data=>#{a=>1}}),
 
     % Send event to client
     Ref = make_ref(),
     Event = #{ref=>base64:encode(term_to_binary({self(), Ref}))},
-    ok = nkserver_rpc9_server:send_event(server, event2, Event),
+    ok = nkrpc9_server:send_event(server, event2, Event),
     receive {Ref, <<"name2">>} -> ok after 1000 -> error(?LINE) end,
     ok.
 
@@ -152,32 +152,32 @@ server_times() ->
     % First we need to increase the times on client so that server fires first,
     % and connect again
     ok = nkserver:update(client, #{cmd_timeout=>10000, ext_cmd_timeout=>180000}),
-    [ClientPid] = nkserver_rpc9_client_protocol:get_local_started(client),
-    nkserver_rpc9_client_protocol:stop(ClientPid),
+    [ClientPid] = nkrpc9_client_protocol:get_local_started(client),
+    nkrpc9_client_protocol:stop(ClientPid),
     timer:sleep(500),
 
-    {ok, <<"ok">>, #{}} = nkserver_rpc9_server:send_request(server, login, #{name=>name2}),
-    [Pid1] = nkserver_rpc9_server_protocol:get_local_started(server),
+    {ok, <<"ok">>, #{}} = nkrpc9_server:send_request(server, login, #{name=>name2}),
+    [Pid1] = nkrpc9_server_protocol:get_local_started(server),
     {ok, <<"error">>, #{<<"code">>:=<<"timeout">>}} =
-        nkserver_rpc9_server:send_request(server, slow11, #{}),
+        nkrpc9_server:send_request(server, slow11, #{}),
     % The server has stopped, supervisor will start it again
     % Ensure it stopped
     timer:sleep(500),
-    [Pid2] = nkserver_rpc9_server_protocol:get_local_started(server),
+    [Pid2] = nkrpc9_server_protocol:get_local_started(server),
     false = Pid1 == Pid2,
 
-    {ok, <<"ok">>, #{}} = nkserver_rpc9_server:send_request(server, login, #{name=>name2}),
-    {ok, <<"ok">>, #{}} = nkserver_rpc9_server:send_request(server, slow12, #{}),
+    {ok, <<"ok">>, #{}} = nkrpc9_server:send_request(server, login, #{name=>name2}),
+    {ok, <<"ok">>, #{}} = nkrpc9_server:send_request(server, slow12, #{}),
 
     {ok, <<"error">>, #{<<"code">>:=<<"timeout">>}} =
-        nkserver_rpc9_server:send_request(server, slow13, #{}),
+        nkrpc9_server:send_request(server, slow13, #{}),
     timer:sleep(500),
-    [Pid3] = nkserver_rpc9_server_protocol:get_local_started(server),
+    [Pid3] = nkrpc9_server_protocol:get_local_started(server),
     false = Pid2 == Pid3,
 
-    {ok, <<"ok">>, #{}} = nkserver_rpc9_server:send_request(server, login, #{name=>name1}),
+    {ok, <<"ok">>, #{}} = nkrpc9_server:send_request(server, login, #{name=>name1}),
     % The server will monitor the ack process, and it will fail
-    {ok, <<"error">>, #{<<"code">>:=<<"process_down">>}} = nkserver_rpc9_server:send_request(server, slow14, #{}),
+    {ok, <<"error">>, #{<<"code">>:=<<"process_down">>}} = nkrpc9_server:send_request(server, slow14, #{}),
     ok.
 
 
@@ -218,10 +218,10 @@ rpc9_parse(<<"login">>, _Data, _Req, State) ->
     {syntax, #{name => binary, '__mandatory' => [name]}, State};
 
 rpc9_parse(<<"event1">>, _Data, _Req, State) ->
-    {syntax, #{ref => binary, '__mandatory' => [class]}, State};
+    {syntax, #{ref => binary}, State};
 
 rpc9_parse(<<"event2">>, _Data, _Req, State) ->
-    {syntax, #{ref => binary, '__mandatory' => [class]}, State};
+    {syntax, #{ref => binary}, State};
 
 rpc9_parse(<<"cmd10">>, _Data, _Req, State) ->
     {syntax, #{data => map, '__mandatory' => [data]}, State};
@@ -238,7 +238,7 @@ rpc9_allow(_Cmd, _Data, #{srv:=server, user_id:=UserId}, _State) when UserId /= 
     true;
 
 rpc9_allow(_Cmd, _Data, #{srv:=server}=Req, _State) ->
-    case nkserver_rpc9_server_http:get_headers(Req) of
+    case nkrpc9_server_http:get_headers(Req) of
         #{<<"x-token">>:=<<"t1">>} ->
             true;
         _ ->
@@ -272,7 +272,7 @@ rpc9_request(<<"slow2">>, _, #{srv:=server}=Req, State) ->
     spawn_link(
         fun() ->
             timer:sleep(600),
-            nkserver_rpc9_server:reply(Req, {reply, #{}})
+            nkrpc9_server:reply(Req, {reply, #{}})
         end),
     {ack, undefined, State};
 
@@ -280,7 +280,7 @@ rpc9_request(<<"slow3">>, _, #{srv:=server}=Req, State) ->
     spawn_link(
         fun() ->
             timer:sleep(1000),
-            nkserver_rpc9_server:reply(Req, {reply, #{}})
+            nkrpc9_server:reply(Req, {reply, #{}})
         end),
     {ack, undefined, State};
 
@@ -294,7 +294,7 @@ rpc9_request(<<"slow4">>, _, #{srv:=server}, State) ->
 rpc9_request(<<"http1">>, _, #{srv:=server}=Req, State) ->
     Pid = spawn_link(
         fun() ->
-            nkserver_rpc9_server:reply(Req, {reply, #{}})
+            nkrpc9_server:reply(Req, {reply, #{}})
         end),
     {ack, Pid, State};
 
@@ -322,7 +322,7 @@ rpc9_request(<<"slow12">>, _, #{srv:=client}=Req, State) ->
     spawn_link(
         fun() ->
             timer:sleep(700),
-            nkserver_rpc9_client:reply(Req, {reply, #{}})
+            nkrpc9_client:reply(Req, {reply, #{}})
         end),
     {ack, undefined, State};
 
@@ -330,7 +330,7 @@ rpc9_request(<<"slow13">>, _, #{srv:=client}=Req, State) ->
     spawn_link(
         fun() ->
             timer:sleep(1300),
-            nkserver_rpc9_client:reply(Req, {reply, #{}})
+            nkrpc9_client:reply(Req, {reply, #{}})
         end),
     {ack, undefined, State};
 

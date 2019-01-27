@@ -5,3 +5,5 @@
 /log
 /ebin
 /.rebar3
+/nkrpc9.version
+/rebar.lock

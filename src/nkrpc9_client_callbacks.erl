@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc Default plugin callbacks
--module(nkserver_rpc9_client_callbacks).
+-module(nkrpc9_client_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([msg/1]).
 -export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/3]).
@@ -27,11 +27,11 @@
 -export([rpc9_init/3, rpc9_handle_call/3, rpc9_handle_cast/2, rpc9_handle_info/2,
          rpc9_terminate/2]).
 
--include("nkserver_rpc9.hrl").
+-include("nkrpc9.hrl").
 
 
 -define(DEBUG(Txt, Args),
-    case erlang:get(nkserver_rpc9_debug) of
+    case erlang:get(nkrpc9_debug) of
         true -> ?LLOG(debug, Txt, Args);
         _ -> ok
     end).
@@ -44,7 +44,7 @@
 %% Types
 %% ===================================================================
 
--type request() :: nkserver_rpc9_server:request().
+-type request() :: nkrpc9_server:request().
 
 
 %% ===================================================================
@@ -58,8 +58,8 @@ msg(_)   		                    -> continue.
 %% REST Callbacks
 %% ===================================================================
 
--type cmd() :: nkserver_rpc9_server:cmd().
--type data() :: nkserver_rpc9_server:data().
+-type cmd() :: nkrpc9_server:cmd().
+-type data() :: nkrpc9_server:data().
 -type state() :: nkapi_server:user_state().
 -type continue() :: nkserver_callbacks:continue().
 -type id() :: nkserver:module_id().

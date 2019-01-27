@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc
--module(nkserver_rpc9_server_protocol).
+-module(nkrpc9_server_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([send_request/3, send_async_request/3, reply/3, send_event/3, server_event/2]).
@@ -35,7 +35,7 @@
 -export([http_init/4]).
 
 -define(DEBUG(Txt, Args, State),
-    case erlang:get(nkserver_rpc9_protocol) of
+    case erlang:get(nkrpc9_protocol) of
         true -> ?LLOG(debug, Txt, Args, State);
         _ -> ok
     end).
@@ -56,7 +56,7 @@
         ])).
 
 -define(MSG(Txt, Args, State),
-    case erlang:get(nkserver_rpc9_msgs) of
+    case erlang:get(nkrpc9_msgs) of
         true -> print(Txt, Args, State);
         _ -> ok
     end).
@@ -153,11 +153,11 @@ get_all(SrvId) ->
 
 
 get_local_started(SrvId) ->
-    pg2:get_local_members({nkserver_rpc9_server, SrvId}).
+    pg2:get_local_members({nkrpc9_server, SrvId}).
 
 
 get_all_started(SrvId) ->
-    pg2:get_members({nkserver_rpc9_server, SrvId}).
+    pg2:get_members({nkrpc9_server, SrvId}).
 
 
 
@@ -252,14 +252,14 @@ conn_init(NkPort) ->
 %%        fun() ->
 %%            lager:error("NKLOG TIME ~p", [nkpacket_connection:get_timeout(Self)])
 %%        end),
-    {ok, _Class, {nkserver_rpc9_server, SrvId}} = nkpacket:get_id(NkPort),
+    {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
     {ok, Local} = nkpacket:get_local_bin(NkPort),
     {ok, Remote} = nkpacket:get_remote_bin(NkPort),
     SessId = <<"session-", (nklib_util:luid())/binary>>,
     true = nklib_proc:reg({?MODULE, session, SessId}, <<>>),
-    pg2:join({nkserver_rpc9_server, SrvId}, self()),
-    OpTime = nkserver:get_plugin_config(SrvId, nkserver_rpc9_server, cmd_timeout),
-    ExtTime = nkserver:get_plugin_config(SrvId, nkserver_rpc9_server, ext_cmd_timeout),
+    pg2:join({nkrpc9_server, SrvId}, self()),
+    OpTime = nkserver:get_plugin_config(SrvId, nkrpc9_server, cmd_timeout),
+    ExtTime = nkserver:get_plugin_config(SrvId, nkrpc9_server, ext_cmd_timeout),
     {ok, UserState} = nkpacket:get_user_state(NkPort),
     State1 = #state{
         srv_id = SrvId,
@@ -542,7 +542,7 @@ conn_stop(Reason, _NkPort, State) ->
 
 http_init(Paths, CowReq, _Env, NkPort) ->
     Method = cowboy_req:method(CowReq),
-    nkserver_rpc9_server_http:init(Method, Paths, CowReq, NkPort).
+    nkrpc9_server_http:init(Method, Paths, CowReq, NkPort).
 
 
 
@@ -554,7 +554,7 @@ http_init(Paths, CowReq, _Env, NkPort) ->
 process_client_req(Cmd, Data, TId, NkPort, State) ->
     #state{srv_id=SrvId, user_id=UserId, user_state=UserState} = State,
     Req = make_req(TId, State),
-    case nkserver_rpc9_process:request(SrvId, Cmd, Data, Req, UserState) of
+    case nkrpc9_process:request(SrvId, Cmd, Data, Req, UserState) of
         {login, UserId2, Reply, UserState2} ->
             State2 = State#state{user_state=UserState2},
             case UserId == <<>> andalso UserId2 /= <<>> of
@@ -578,7 +578,7 @@ process_client_req(Cmd, Data, TId, NkPort, State) ->
 %% @private
 process_client_event(Event, Data, #state{srv_id=SrvId, user_state=UserState}=State) ->
     Req = make_req(<<>>, State),
-    case nkserver_rpc9_process:event(SrvId, Event, Data, Req, UserState) of
+    case nkrpc9_process:event(SrvId, Event, Data, Req, UserState) of
         {ok, UserState2} ->
             {ok, State#state{user_state=UserState2}};
         {error, _Error, UserState2} ->
@@ -647,7 +647,7 @@ make_req(TId, State) ->
         tid => TId,
         user_id => UserId,
         timeout_pending => true,
-        debug => get(nkserver_rpc9_msgs)
+        debug => get(nkrpc9_msgs)
     }.
 
 
@@ -658,7 +658,7 @@ process_login(UserId, Reply, TId, NkPort, State) ->
         session_id = SessId,
         user_state = UserState
     } = State,
-    PingTime = nkserver:get_plugin_config(SrvId, nkserver_rpc9_server, ping_interval),
+    PingTime = nkserver:get_plugin_config(SrvId, nkrpc9_server, ping_interval),
     nklib_proc:put({?MODULE, user, UserId}, {SessId, UserState}),
     nklib_proc:put({?MODULE, session, SessId}, UserId),
     start_ping(self(), PingTime),
@@ -829,11 +829,11 @@ print(Txt, Args, State) ->
 
 %% @private
 set_debug(#state{srv_id = SrvId}=State) ->
-    Debug = nkserver:get_plugin_config(SrvId, nkserver_rpc9_server, debug),
+    Debug = nkserver:get_plugin_config(SrvId, nkrpc9_server, debug),
     Protocol = lists:member(protocol, Debug),
     Msgs = lists:member(msgs, Debug),
-    put(nkserver_rpc9_protocol, Protocol),
-    put(nkserver_rpc9_msgs, Msgs),
+    put(nkrpc9_protocol, Protocol),
+    put(nkrpc9_msgs, Msgs),
     ?DEBUG("debug system activated", [], State),
     ?MSG("msgs system activated", [], State).
 

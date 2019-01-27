@@ -1,9 +1,9 @@
-{application, nkserver_rpc9, [
+{application, nkrpc9, [
     {description, "NkSERVER RPC9 Package"},
     {vsn, "develop"},
     {modules, []},
     {registered, []},
-    {mod, {nkserver_rpc9_app, []}},
+    {mod, {nkrpc9_app, []}},
     {applications, [
         nkpacket,
         nkserver

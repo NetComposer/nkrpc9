@@ -19,13 +19,13 @@
 %% -------------------------------------------------------------------
 
 %% @doc Default callbacks for plugin definitions
--module(nkserver_rpc9_server_plugin).
+-module(nkrpc9_server_plugin).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([plugin_deps/0, plugin_config/3, plugin_cache/3,
           plugin_start/3, plugin_update/4, plugin_stop/3]).
 
 
--include("nkserver_rpc9.hrl").
+-include("nkrpc9.hrl").
 -include_lib("nkserver/include/nkserver.hrl").
 -include_lib("nkpacket/include/nkpacket.hrl").
 
@@ -48,14 +48,13 @@ plugin_config(SrvId, Config, #{class:=?PACKAGE_CLASS_RPC9_SRV}=Service) ->
         cmd_timeout => {integer, 5, none},
         ext_cmd_timeout => {integer, 5, none},
         http_max_body => {integer, 1024, none},
-        user_state => map,
+        user_state => any,
         '__mandatory' => [url],
         '__defaults' => #{
             ping_interval => 10000,
             cmd_timeout => 10000,
             ext_cmd_timeout => 180000,
-            http_max_body => 10*1024*1024,
-            user_state => #{}
+            http_max_body => 10*1024*1024
         }
     },
     case nklib_syntax:parse(Config, Syntax) of
@@ -84,7 +83,7 @@ plugin_cache(_SrvId, Config, _Service) ->
 
 %% @doc
 plugin_start(SrvId, Config, Service) ->
-    pg2:create({nkserver_rpc9_server, SrvId}),
+    pg2:create({nkrpc9_server, SrvId}),
     {ok, Conns} = get_listen(SrvId, Config, Service),
     {ok, Listeners} = make_listen_transps(SrvId, Conns),
     insert_listeners(SrvId, Listeners, Service).
@@ -111,17 +110,17 @@ plugin_update(SrvId, NewConfig, OldConfig, Service) ->
 
 %% @private
 get_listen(SrvId, #{url:=Url}=Config, _Service) ->
-    ResolveOpts = #{protocol=>nkserver_rpc9_server_protocol},
+    ResolveOpts = #{protocol=>nkrpc9_server_protocol},
     ConfigOpts = maps:get(opts, Config, #{}),
     case nkpacket_resolve:resolve(Url, ResolveOpts) of
         {ok, Conns} ->
             Debug = maps:get(debug, Config, []),
             Opts = ConfigOpts#{
-                id => {nkserver_rpc9_server, SrvId},
+                id => {nkrpc9_server, SrvId},
                 class => {?PACKAGE_CLASS_RPC9_SRV, SrvId},
                 debug => lists:member(nkpacket, Debug),
                 get_headers => [<<"user-agent">>],
-                user_state => maps:get(user_state, Config)
+                user_state => maps:get(user_state, Config, undefined)
             },
             do_get_listen(Conns, Opts, []);
         {error, Error} ->
@@ -133,7 +132,7 @@ get_listen(SrvId, #{url:=Url}=Config, _Service) ->
 do_get_listen([], _Opts, Acc) ->
     {ok, Acc};
 
-do_get_listen([#nkconn{protocol=nkserver_rpc9_server_protocol}=Conn|Rest], Opts, Acc) ->
+do_get_listen([#nkconn{protocol=nkrpc9_server_protocol}=Conn|Rest], Opts, Acc) ->
     #nkconn{opts=ConnOpts} = Conn,
     Opts2 = maps:merge(ConnOpts, Opts),
     Opts3 = Opts2#{

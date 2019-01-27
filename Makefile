@@ -1,4 +1,4 @@
-APP = nkserver_rpc9
+APP = nkrpc9
 REBAR = rebar3
 AFLAGS = "-kernel shell_history enabled -kernel logger_sasl_compatible true"
 

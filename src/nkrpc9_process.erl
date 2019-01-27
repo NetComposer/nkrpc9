@@ -19,14 +19,14 @@
 %% -------------------------------------------------------------------
 
 %% @doc
--module(nkserver_rpc9_process).
+-module(nkrpc9_process).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([request/5, event/5]).
 -include_lib("nkserver/include/nkserver.hrl").
 
 
 -define(DEBUG(Txt, Args, State),
-    case erlang:get(nkserver_rpc9_debug) of
+    case erlang:get(nkrpc9_debug) of
         true -> ?LLOG(debug, Txt, Args, State);
         _ -> ok
     end).

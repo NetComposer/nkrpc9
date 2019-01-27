@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc
--module(nkserver_rpc9_client_protocol).
+-module(nkrpc9_client_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([connect/3, stop/1]).
@@ -31,7 +31,7 @@
          conn_handle_cast/3, conn_handle_info/3, conn_stop/3]).
 
 -define(DEBUG(Txt, Args, State),
-    case erlang:get(nkserver_rpc9_protocol) of
+    case erlang:get(nkrpc9_protocol) of
         true -> ?LLOG(debug, Txt, Args, State);
         _ -> ok
     end).
@@ -52,7 +52,7 @@
         ])).
 
 -define(MSG(Txt, Args, State),
-    case erlang:get(nkserver_rpc9_msgs) of
+    case erlang:get(nkrpc9_msgs) of
         true -> print(Txt, Args, State);
         _ -> ok
     end).
@@ -82,7 +82,7 @@
 connect(SrvId, Url, Opts) ->
     ConnOpts = Opts#{
         protocol => ?MODULE,
-        class => {nkserver_rpc9_client, SrvId}
+        class => {nkrpc9_client, SrvId}
     },
     nkpacket:connect(Url, ConnOpts).
 
@@ -125,12 +125,12 @@ reply(Pid, TId, {ack, AckPid}) ->
 
 %% @private
 get_local_started(SrvId) ->
-    pg2:get_local_members({nkserver_rpc9_client, SrvId}).
+    pg2:get_local_members({nkrpc9_client, SrvId}).
 
 
 %% @private
 get_all_started(SrvId) ->
-    pg2:get_members({nkserver_rpc9_client, SrvId}).
+    pg2:get_members({nkrpc9_client, SrvId}).
 
 
 
@@ -189,14 +189,14 @@ default_port(wss) -> 9011.
     {ok, #state{}}.
 
 conn_init(NkPort) ->
-    {ok, _Class, {nkserver_rpc9_client, SrvId}} = nkpacket:get_id(NkPort),
+    {ok, _Class, {nkrpc9_client, SrvId}} = nkpacket:get_id(NkPort),
     {ok, Local} = nkpacket:get_local_bin(NkPort),
     {ok, Remote} = nkpacket:get_remote_bin(NkPort),
     SessId = <<"session-", (nklib_util:luid())/binary>>,
     true = nklib_proc:reg({?MODULE, session, SessId}, <<>>),
-    pg2:join({nkserver_rpc9_client, SrvId}, self()),
-    OpTime = nkserver:get_plugin_config(SrvId, nkserver_rpc9_client, cmd_timeout),
-    ExtTime = nkserver:get_plugin_config(SrvId, nkserver_rpc9_client, ext_cmd_timeout),
+    pg2:join({nkrpc9_client, SrvId}, self()),
+    OpTime = nkserver:get_plugin_config(SrvId, nkrpc9_client, cmd_timeout),
+    ExtTime = nkserver:get_plugin_config(SrvId, nkrpc9_client, ext_cmd_timeout),
     {ok, UserState} = nkpacket:get_user_state(NkPort),
     State1 = #state{
         srv_id = SrvId,
@@ -386,7 +386,7 @@ conn_stop(Reason, _NkPort, State) ->
 process_server_req(Cmd, Data, TId, NkPort, State) ->
     #state{srv_id=SrvId, user_state=UserState} = State,
     Req = make_req(TId, State),
-    case nkserver_rpc9_process:request(SrvId, Cmd, Data, Req, UserState) of
+    case nkrpc9_process:request(SrvId, Cmd, Data, Req, UserState) of
         {reply, Reply, UserState2} ->
             send_reply_ok(Reply, TId, NkPort, State#state{user_state=UserState2});
         {ack, Pid, UserState2} ->
@@ -400,7 +400,7 @@ process_server_req(Cmd, Data, TId, NkPort, State) ->
 %% @private
 process_server_event(Event, Data, #state{srv_id=SrvId, user_state=UserState}=State) ->
     Req = make_req(<<>>, State),
-    case nkserver_rpc9_process:event(SrvId, Event, Data, Req, UserState) of
+    case nkrpc9_process:event(SrvId, Event, Data, Req, UserState) of
         {ok, UserState2} ->
             {ok, State#state{user_state=UserState2}};
         {error, _Error, UserState2} ->
@@ -469,7 +469,7 @@ make_req(TId, State) ->
         tid => TId,
         user_id => UserId,
         timeout_pending => true,
-        debug => get(nkserver_rpc9_msgs)
+        debug => get(nkrpc9_msgs)
     }.
 
 
@@ -629,11 +629,11 @@ print(Txt, Args, State) ->
 
 
 set_debug(#state{srv_id = SrvId}=State) ->
-    Debug = nkserver:get_plugin_config(SrvId, nkserver_rpc9_client, debug),
+    Debug = nkserver:get_plugin_config(SrvId, nkrpc9_client, debug),
     Protocol = lists:member(protocol, Debug),
     Msgs = lists:member(msgs, Debug),
-    put(nkserver_rpc9_protocol, Protocol),
-    put(nkserver_rpc9_msgs, Msgs),
+    put(nkrpc9_protocol, Protocol),
+    put(nkrpc9_msgs, Msgs),
     ?DEBUG("debug system activated", [], State),
     ?MSG("msgs system activated", [], State).
 

@@ -19,13 +19,13 @@
 %% -------------------------------------------------------------------
 
 %% @doc Default callbacks for plugin definitions
--module(nkserver_rpc9_client_plugin).
+-module(nkrpc9_client_plugin).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([plugin_deps/0, plugin_config/3, plugin_cache/3,
          plugin_start/3, plugin_update/4, plugin_stop/3]).
 -export([connect_link/2]).
 
--include("nkserver_rpc9.hrl").
+-include("nkrpc9.hrl").
 -include_lib("nkserver/include/nkserver.hrl").
 -include_lib("nkpacket/include/nkpacket.hrl").
 
@@ -73,19 +73,19 @@ plugin_cache(_SrvId, Config, _Service) ->
 
 %% @doc
 plugin_start(SrvId, #{url:=Url}=Config, Service) ->
-    pg2:create({nkserver_rpc9_client, SrvId}),
+    pg2:create({nkrpc9_client, SrvId}),
     ConfigOpts = maps:get(opts, Config, #{}),
     Debug = maps:get(debug, Config, []),
     ConnOpts = ConfigOpts#{
-        protocol => nkserver_rpc9_client_protocol,
-        id => {nkserver_rpc9_client, SrvId},
+        protocol => nkrpc9_client_protocol,
+        id => {nkrpc9_client, SrvId},
         class => {?PACKAGE_CLASS_RPC9_CLIENT, SrvId},
         idle_timeout => 60000,
         user_state => maps:get(user_state, Config),
         debug => lists:member(nkpacket, Debug)
     },
     Spec = #{
-        id => {nkserver_rpc9_client, SrvId},
+        id => {nkrpc9_client, SrvId},
         restart => permanent,
         start => {?MODULE, connect_link, [Url, ConnOpts]}
     },

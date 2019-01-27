@@ -19,7 +19,7 @@
 %% -------------------------------------------------------------------
 
 %% @doc Default plugin callbacks
--module(nkserver_rpc9_server_callbacks).
+-module(nkrpc9_server_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([msg/1]).
 -export([request/3]).
@@ -28,11 +28,11 @@
 -export([rpc9_init/3, rpc9_handle_call/3, rpc9_handle_cast/2, rpc9_handle_info/2,
          rpc9_terminate/2]).
 
--include("nkserver_rpc9.hrl").
+-include("nkrpc9.hrl").
 
 
 -define(DEBUG(Txt, Args),
-    case erlang:get(nkserver_rpc9_debug) of
+    case erlang:get(nkrpc9_debug) of
         true -> ?LLOG(debug, Txt, Args);
         _ -> ok
     end).
@@ -45,7 +45,7 @@
 %% Types
 %% ===================================================================
 
--type request() :: nkserver_rpc9_server:request().
+-type request() :: nkrpc9_server:request().
 
 
 %% ===================================================================
@@ -60,16 +60,16 @@ msg(_)   		           -> continue.
 %% REST Callbacks
 %% ===================================================================
 
--type cmd() :: nkserver_rpc9_server:cmd().
--type event() :: nkserver_rpc9_server:event().
--type data() :: nkserver_rpc9_server:data().
+-type cmd() :: nkrpc9_server:cmd().
+-type event() :: nkrpc9_server:event().
+-type data() :: nkrpc9_server:data().
 -type state() :: nkapi_server:user_state().
 -type continue() :: nkserver_callbacks:continue().
 -type id() :: nkserver:module_id().
--type http_method() :: nkserver_rpc9_server_http:method().
--type http_path() :: nkserver_rpc9_server_http:path().
--type http_req() :: nkserver_rpc9_server_http:req().
--type http_reply() :: nkserver_rpc9_server_http:http_reply().
+-type http_method() :: nkrpc9_server_http:method().
+-type http_path() :: nkrpc9_server_http:path().
+-type http_req() :: nkrpc9_server_http:req().
+-type http_reply() :: nkrpc9_server_http:http_reply().
 -type nkport() :: nkpacket:nkport().
 
 
@@ -86,7 +86,7 @@ request(Method, Path, #{srv:=SrvId}=Req) ->
     {http, 404, [], <<"NkSERVER RPC9: Path Not Found">>, Req}.
 
 %%request(SrvId, Method, Path, #{srv:=SrvId}=Req) ->
-%%    case nkserver:get_plugin_config(SrvId, nkserver_rpc9, requestCallBack) of
+%%    case nkserver:get_plugin_config(SrvId, nkrpc9, requestCallBack) of
 %%        #{class:=luerl, luerl_fun:=_}=CB ->
 %%            case nkserver_luerl_instance:spawn_callback_spec(SrvId, CB) of
 %%                {ok, Pid} ->

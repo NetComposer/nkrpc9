@@ -19,14 +19,14 @@
 %% -------------------------------------------------------------------
 
 %% @doc
--module(nkserver_rpc9_server_http).
+-module(nkrpc9_server_http).
 -export([is_http/1, get_headers/1, get_qs/1, get_basic_auth/1]).
 -export([init/4, terminate/3]).
 -export_type([method/0, reply/0, code/0, headers/0, body/0, req/0, path/0, http_qs/0]).
 
 
 -define(DEBUG(Txt, Args, State),
-    case erlang:get(nkserver_rpc9_debug) of
+    case erlang:get(nkrpc9_debug) of
         true -> ?LLOG(debug, Txt, Args, State);
         _ -> ok
     end).
@@ -37,7 +37,7 @@
 
 -include_lib("nkserver/include/nkserver.hrl").
 -include_lib("nkpacket/include/nkpacket.hrl").
--include("nkserver_rpc9.hrl").
+-include("nkrpc9.hrl").
 
 
 %% ===================================================================
@@ -138,7 +138,7 @@ init(<<"POST">>, [], CowReq, NkPort) ->
         (nklib_util:to_host(Ip))/binary, ":",
         (to_bin(Port))/binary
     >>,
-    {ok, _Class, {nkserver_rpc9_server, SrvId}} = nkpacket:get_id(NkPort),
+    {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
     set_debug(SrvId),
     try
         case cowboy_req:method(CowReq) of
@@ -160,10 +160,10 @@ init(<<"POST">>, [], CowReq, NkPort) ->
             cmd => Cmd,
             data => Data,
             timeout_pending => false,
-            debug => get(nkserver_rpc9_debug),
+            debug => get(nkrpc9_debug),
             '_cowreq' => CowReq2
         },
-        case nkserver_rpc9_process:request(SrvId, Cmd, Data, Req, #{}) of
+        case nkrpc9_process:request(SrvId, Cmd, Data, Req, #{}) of
             {login, _UserId, Reply, _State} ->
                 send_msg_ok(Reply, CowReq2);
             {reply, Reply, _State} ->
@@ -188,7 +188,6 @@ init(_, [], CowReq, _NkPort) ->
     send_http_reply(400, #{}, <<"Only POST is supported">>, CowReq);
 
 init(_, _Path, CowReq, _NkPort) ->
-    lager:error("NKLOG HTTP2"),
     send_http_reply(404, #{}, <<"Path not found">>, CowReq).
 
 
@@ -204,14 +203,14 @@ terminate(_Reason, _Req, _Opts) ->
 
 %% @private
 set_debug(SrvId) ->
-    Debug = nkserver:get_plugin_config(SrvId, nkserver_rpc9_server, debug),
+    Debug = nkserver:get_plugin_config(SrvId, nkrpc9_server, debug),
     Http = lists:member(protocol, Debug),
-    put(nkserver_rpc9_debug, Http).
+    put(nkrpc9_debug, Http).
 
 
 %% @private
 get_body(SrvId, CowReq) ->
-    MaxBody = nkserver:get_plugin_config(SrvId, nkserver_rpc9_server, http_max_body),
+    MaxBody = nkserver:get_plugin_config(SrvId, nkrpc9_server, http_max_body),
     case cowboy_req:body_length(CowReq) of
         BL when is_integer(BL), BL =< MaxBody ->
             %% https://ninenines.eu/docs/en/cowboy/2.1/guide/req_body/
@@ -238,7 +237,7 @@ get_body(SrvId, CowReq) ->
 
 %% @private
 wait_ack(#{srv:=SrvId, tid:=TId, '_cowreq':=CowReq}=Req, Mon) ->
-    ExtTime = nkserver:get_plugin_config(SrvId, nkserver_rpc9_server, ext_cmd_timeout),
+    ExtTime = nkserver:get_plugin_config(SrvId, nkrpc9_server, ext_cmd_timeout),
     receive
         {'$gen_cast', {rpc9_reply_login, _UserId, Reply, TId}} ->
             nklib_util:demonitor(Mon),

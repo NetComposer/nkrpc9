@@ -1,5 +1,5 @@
--ifndef(NKSERVER_RPC9_HRL_).
--define(NKSERVER_RPC9_HRL_, 1).
+-ifndef(NKRPC9_HRL_).
+-define(NKRPC9_HRL_, 1).
 
 %% ===================================================================
 %% Defines
