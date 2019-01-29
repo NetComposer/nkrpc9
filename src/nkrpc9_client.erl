@@ -23,7 +23,7 @@
 
 -export([start_link/2, get_sup_spec/2]).
 -export([stop/1, update/2]).
--export([send_request/3, send_async_request/3, reply/2, send_event/3]).
+-export([send_request/3, send_async_request/3, reply/2, reply/3, send_event/3]).
 -export_type([request/0, reply/0, async_reply/0, event/0]).
 
 -include("nkrpc9.hrl").
@@ -132,9 +132,16 @@ send_event(SrvId, Event, Data) ->
             {error, no_transports}
     end.
 
+
 %% @doc Reply to an asynchronous request
 reply(#{session_pid:=Pid, tid:=TId}, Reply) ->
     nkrpc9_client_protocol:reply(Pid, TId, Reply).
+
+
+%% @doc Reply to an asynchronous request updating state
+reply(#{session_pid:=Pid, tid:=TId}, Reply, StateFun) ->
+    nkrpc9_client_protocol:reply(Pid, TId, Reply, StateFun).
+
 
 
 %% @private

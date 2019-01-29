@@ -49,7 +49,7 @@ plugin_config(_SrvId, Config, #{class:=?PACKAGE_CLASS_RPC9_CLIENT}) ->
         user_state => map,
         '__mandatory' => [url],
         '__defaults' => #{
-            cmd_timeout => 10000,
+            cmd_timeout => 30000,
             ext_cmd_timeout => 180000,
             user_state => #{}
         }

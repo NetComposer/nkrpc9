@@ -52,7 +52,7 @@ plugin_config(SrvId, Config, #{class:=?PACKAGE_CLASS_RPC9_SRV}=Service) ->
         '__mandatory' => [url],
         '__defaults' => #{
             ping_interval => 10000,
-            cmd_timeout => 10000,
+            cmd_timeout => 30000,
             ext_cmd_timeout => 180000,
             http_max_body => 10*1024*1024
         }

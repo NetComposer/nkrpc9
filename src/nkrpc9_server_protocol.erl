@@ -22,7 +22,7 @@
 -module(nkrpc9_server_protocol).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--export([send_request/3, send_async_request/3, reply/3, send_event/3, server_event/2]).
+-export([send_request/3, send_async_request/3, reply/3, reply/4, send_event/3, server_event/2]).
 -export([start_ping/2, stop_ping/1]).
 -export([subscribe/2, unsubscribe/2, get_subscriptions/1]).
 -export([stop/1, get_all/1]).
@@ -100,18 +100,23 @@ server_event(Pid, Event) ->
     do_cast(Pid, {rpc9_server_event, Event}).
 
 
-%% doc
-reply(Pid, TId, {login, UserId, Reply}) ->
-    do_cast(Pid, {rpc9_reply_login, UserId, Reply, TId});
+%% @doc
+reply(Pid, TId, Reply) ->
+    reply(Pid, TId, Reply, undefined).
 
-reply(Pid, TId, {reply, Reply}) ->
-    do_cast(Pid, {rpc9_reply_ok, Reply, TId});
 
-reply(Pid, TId, {error, Error}) ->
-    do_cast(Pid, {rpc9_reply_error, Error, TId});
+%% @doc
+reply(Pid, TId, {login, UserId, Reply}, StateFun) ->
+    do_cast(Pid, {rpc9_reply_login, UserId, Reply, TId, StateFun});
 
-reply(Pid, TId, {ack, AckPid}) ->
-    do_cast(Pid, {rpc9_reply_ack, AckPid, TId}).
+reply(Pid, TId, {reply, Reply}, StateFun) ->
+    do_cast(Pid, {rpc9_reply_ok, Reply, TId, StateFun});
+
+reply(Pid, TId, {error, Error}, StateFun) ->
+    do_cast(Pid, {rpc9_reply_error, Error, TId, StateFun});
+
+reply(Pid, TId, {ack, AckPid}, StateFun) ->
+    do_cast(Pid, {rpc9_reply_ack, AckPid, TId, StateFun}).
 
 
 %% @doc Start sending pings
@@ -376,16 +381,18 @@ conn_handle_cast({rpc9_send_req, Cmd, Data}, NkPort, State) ->
 conn_handle_cast({rpc9_send_event, Event, Data}, NkPort, State) ->
     send_event(Event, Data, NkPort, State);
 
-conn_handle_cast({rpc9_reply_login, UserId2, Reply, TId}, NkPort, #state{user_id=UserId}=State) ->
+conn_handle_cast({rpc9_reply_login, UserId2, Reply, TId, StateFun}, NkPort, State) ->
+    #state{user_id=UserId} = State,
     case extract_op(TId, State) of
         {#trans{op=ack}, State2} ->
+            State3 = apply_state_fun(StateFun, State2),
             case UserId == <<>> andalso UserId2 /= <<>> of
                 true ->
-                    process_login(UserId2, Reply, TId, NkPort, State2);
+                    process_login(UserId2, Reply, TId, NkPort, State3);
                 false when UserId /= UserId2 ->
-                    send_reply_error(invalid_login_request, TId, NkPort, State2);
+                    send_reply_error(invalid_login_request, TId, NkPort, State3);
                 false ->
-                    send_reply_ok(Reply, TId, NkPort, State2)
+                    send_reply_ok(Reply, TId, NkPort, State3)
             end;
         not_found ->
             ?LLOG(notice, "received user reply_ok for unknown req: ~p ~p",
@@ -393,9 +400,10 @@ conn_handle_cast({rpc9_reply_login, UserId2, Reply, TId}, NkPort, #state{user_id
             {ok, State}
     end;
 
-conn_handle_cast({rpc9_reply_ok, Reply, TId}, NkPort, State) ->
+conn_handle_cast({rpc9_reply_ok, Reply, TId, StateFun}, NkPort, State) ->
     case extract_op(TId, State) of
-        {#trans{op=ack}, State3} ->
+        {#trans{op=ack}, State2} ->
+            State3 = apply_state_fun(StateFun, State2),
             send_reply_ok(Reply, TId, NkPort, State3);
         not_found ->
             ?LLOG(notice, "received user reply_ok for unknown req: ~p ~p",
@@ -403,27 +411,29 @@ conn_handle_cast({rpc9_reply_ok, Reply, TId}, NkPort, State) ->
             {ok, State}
     end;
 
-conn_handle_cast({rpc9_reply_error, Error, TId}, NkPort, State) ->
+conn_handle_cast({rpc9_reply_error, Error, TId, StateFun}, NkPort, State) ->
     case extract_op(TId, State) of
         {#trans{op=ack}, State2} ->
-            send_reply_error(Error, TId, NkPort, State2);
+            State3 = apply_state_fun(StateFun, State2),
+            send_reply_error(Error, TId, NkPort, State3);
         not_found ->
             ?LLOG(notice, "received user reply_error for unknown req: ~p ~p",
                 [TId, State#state.trans], State),
             {ok, State}
     end;
 
-conn_handle_cast({rpc9_reply_ack, Pid, TId, Meta}, NkPort, State) ->
+conn_handle_cast({rpc9_reply_ack, Pid, TId, Meta, StateFun}, NkPort, State) ->
     case extract_op(TId, State) of
         {#trans{op=ack}, State2} ->
             State3 = insert_ack(TId, Pid, State2),
-            send_ack(TId, Meta, NkPort, State3);
+            State4 = apply_state_fun(StateFun, State3),
+            send_ack(TId, Meta, NkPort, State4);
         not_found ->
             ?LLOG(notice, "received user reply_ack for unknown req", [], State),
             {ok, State}
     end;
 
-conn_handle_cast(rpc9, _NkPort, State) ->
+conn_handle_cast(rpc9_stop, _NkPort, State) ->
     ?LLOG(info, "user stop", [], State),
     {stop, normal, State};
 
@@ -502,10 +512,11 @@ conn_handle_info({timeout, _, {rpc9_op_timeout, TId}}, _NkPort, State) ->
             {ok, State}
     end;
 
-conn_handle_info({'EXIT', _PId, normal}, _NkPort, State) ->
+conn_handle_info({'EXIT', _Pid, _}, _NkPort, State) ->
+    % We don't care about linked process with us that fail or stop
     {ok, State};
 
-conn_handle_info({'DOWN', Ref, process, _Pid, _Reason}=Info, NkPort, State) ->
+conn_handle_info({'DOWN', Ref, process, Pid, Reason}=Info, NkPort, State) ->
     #state{regs=Regs} = State,
     case lists:keytake(Ref, #reg.mon, Regs) of
         {value, #reg{event=Event}, Regs2} ->
@@ -514,7 +525,8 @@ conn_handle_info({'DOWN', Ref, process, _Pid, _Reason}=Info, NkPort, State) ->
         false ->
             case extract_op_mon(Ref, State) of
                 {true, TId, #trans{op=Op}, State2} ->
-                    ?LLOG(notice, "operation ~p (~p) process down!", [Op, TId], State),
+                    ?LLOG(notice, "operation ~p (~p) process down! (~p, ~p)",
+                          [Op, TId, Pid, Reason], State),
                     send_reply_error(process_down, TId, NkPort, State2);
                 false ->
                     handle(rpc9_handle_info, [Info], State)
@@ -841,3 +853,11 @@ set_debug(#state{srv_id = SrvId}=State) ->
 %% @private
 handle(Fun, Args, State) ->
     nkserver_util:handle_user_call(Fun, Args, State, #state.srv_id, #state.user_state).
+
+
+%% @private
+apply_state_fun(undefined, State) ->
+    State;
+
+apply_state_fun(Fun, #state{user_state=UserState}=State) ->
+    State#state{user_state = Fun(UserState)}.

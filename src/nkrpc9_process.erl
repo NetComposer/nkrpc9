@@ -148,7 +148,7 @@ request_process(SrvId, Cmd, Data, Req, State) ->
         {ack, Pid, State2} ->
             {ack, Pid, State2};
         {error, Error} ->
-            {error, Error};
+            {error, Error, State};
         {error, Error, State2} ->
             {error, Error, State2}
     end.
