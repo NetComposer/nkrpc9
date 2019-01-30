@@ -80,7 +80,6 @@ plugin_start(SrvId, #{url:=Url}=Config, Service) ->
         protocol => nkrpc9_client_protocol,
         id => {nkrpc9_client, SrvId},
         class => {?PACKAGE_CLASS_RPC9_CLIENT, SrvId},
-        idle_timeout => 60000,
         user_state => maps:get(user_state, Config),
         debug => lists:member(nkpacket, Debug)
     },
