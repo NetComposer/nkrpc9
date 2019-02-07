@@ -195,7 +195,6 @@ conn_init(NkPort) ->
     {ok, Local} = nkpacket:get_local_bin(NkPort),
     {ok, Remote} = nkpacket:get_remote_bin(NkPort),
     {ok, Opts} = nkpacket:get_opts(NkPort),
-    lager:error("NKLOG OPTS ~p", [Opts]),
     SessId = <<"session-", (nklib_util:luid())/binary>>,
     true = nklib_proc:reg({?MODULE, session, SessId}, <<>>),
     pg2:join({nkrpc9_client, SrvId}, self()),

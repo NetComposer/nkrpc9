@@ -260,7 +260,7 @@ conn_init(NkPort) ->
     {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
     {ok, Local} = nkpacket:get_local_bin(NkPort),
     {ok, Remote} = nkpacket:get_remote_bin(NkPort),
-    {ok, Opts} = nkpacket:get_remote_opts(NkPort),
+    {ok, Opts} = nkpacket:get_opts(NkPort),
     SessId = <<"session-", (nklib_util:luid())/binary>>,
     true = nklib_proc:reg({?MODULE, session, SessId}, <<>>),
     pg2:join({nkrpc9_server, SrvId}, self()),
