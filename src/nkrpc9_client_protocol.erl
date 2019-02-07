@@ -228,8 +228,6 @@ conn_parse({text, Text}, NkPort, State) ->
     Msg = nklib_json:decode(Text),
     case Msg of
         #{<<"cmd">> := <<"ping">>, <<"tid">> := TId} ->
-            %lager:error("NKLOG RECEIVED PING", [State#state.user_state]),
-
             send_reply_ok(#{}, TId, NkPort, State);
         #{<<"cmd">> := Cmd, <<"tid">> := TId} ->
             ?MSG("received ~s", [Msg], State),
