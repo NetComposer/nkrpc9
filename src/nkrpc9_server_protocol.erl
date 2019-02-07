@@ -260,6 +260,7 @@ conn_init(NkPort) ->
     {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
     {ok, Local} = nkpacket:get_local_bin(NkPort),
     {ok, Remote} = nkpacket:get_remote_bin(NkPort),
+    {ok, Opts} = nkpacket:get_remote_opts(NkPort),
     SessId = <<"session-", (nklib_util:luid())/binary>>,
     true = nklib_proc:reg({?MODULE, session, SessId}, <<>>),
     pg2:join({nkrpc9_server, SrvId}, self()),
@@ -276,7 +277,8 @@ conn_init(NkPort) ->
         user_state = UserState
     },
     set_debug(State1),
-    ?LLOG(info, "new connection (~s, ~p)", [Remote, self()], State1),
+    Idle = maps:get(idle_timeout, Opts),
+    ?LLOG(info, "new connection (~s, ~p) (Idle:~p)", [Remote, self(), Idle], State1),
     {ok, State2} = handle(rpc9_init, [SrvId, NkPort], State1),
     {ok, State2}.
 

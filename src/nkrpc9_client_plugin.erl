@@ -46,6 +46,7 @@ plugin_config(_SrvId, Config, #{class:=?PACKAGE_CLASS_RPC9_CLIENT}) ->
         debug => {list, {atom, [nkpacket, protocol, msgs]}},
         cmd_timeout => {integer, 5, none},
         ext_cmd_timeout => {integer, 5, none},
+        connection_callback => mfa,
         user_state => map,
         '__mandatory' => [url],
         '__defaults' => #{
@@ -74,9 +75,10 @@ plugin_cache(_SrvId, Config, _Service) ->
 %% @doc
 plugin_start(SrvId, #{url:=Url}=Config, Service) ->
     pg2:create({nkrpc9_client, SrvId}),
-    ConfigOpts = maps:get(opts, Config, #{}),
+    ConfigOpts1 = maps:get(opts, Config, #{}),
+    ConfigOpts2 = maps:merge(#{idle_timeout=>50000}, ConfigOpts1),
     Debug = maps:get(debug, Config, []),
-    ConnOpts = ConfigOpts#{
+    ConnOpts = ConfigOpts2#{
         protocol => nkrpc9_client_protocol,
         id => {nkrpc9_client, SrvId},
         class => {?PACKAGE_CLASS_RPC9_CLIENT, SrvId},

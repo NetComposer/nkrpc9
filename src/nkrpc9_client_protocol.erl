@@ -194,6 +194,8 @@ conn_init(NkPort) ->
     {ok, _Class, {nkrpc9_client, SrvId}} = nkpacket:get_id(NkPort),
     {ok, Local} = nkpacket:get_local_bin(NkPort),
     {ok, Remote} = nkpacket:get_remote_bin(NkPort),
+    {ok, Opts} = nkpacket:get_opts(NkPort),
+    lager:error("NKLOG OPTS ~p", [Opts]),
     SessId = <<"session-", (nklib_util:luid())/binary>>,
     true = nklib_proc:reg({?MODULE, session, SessId}, <<>>),
     pg2:join({nkrpc9_client, SrvId}, self()),
@@ -210,7 +212,8 @@ conn_init(NkPort) ->
         user_state = UserState
     },
     set_debug(State1),
-    ?LLOG(info, "new connection (~s, ~p)", [Remote, self()], State1),
+    Idle = maps:get(idle_timeout, Opts),
+    ?LLOG(info, "new connection (~s, ~p) (iddle:~p)", [Remote, self(), Idle], State1),
     {ok, State2} = handle(rpc9_init, [SrvId, NkPort], State1),
     {ok, State2}.
 
@@ -226,6 +229,8 @@ conn_parse({text, Text}, NkPort, State) ->
     Msg = nklib_json:decode(Text),
     case Msg of
         #{<<"cmd">> := <<"ping">>, <<"tid">> := TId} ->
+            %lager:error("NKLOG RECEIVED PING", [State#state.user_state]),
+
             send_reply_ok(#{}, TId, NkPort, State);
         #{<<"cmd">> := Cmd, <<"tid">> := TId} ->
             ?MSG("received ~s", [Msg], State),

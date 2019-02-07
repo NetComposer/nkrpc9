@@ -111,11 +111,12 @@ plugin_update(SrvId, NewConfig, OldConfig, Service) ->
 %% @private
 get_listen(SrvId, #{url:=Url}=Config, _Service) ->
     ResolveOpts = #{protocol=>nkrpc9_server_protocol},
-    ConfigOpts = maps:get(opts, Config, #{}),
+    ConfigOpts1 = maps:get(opts, Config, #{}),
+    ConfigOpts2 = maps:merge(#{idle_timeout=>60000}, ConfigOpts1),
     case nkpacket_resolve:resolve(Url, ResolveOpts) of
         {ok, Conns} ->
             Debug = maps:get(debug, Config, []),
-            Opts = ConfigOpts#{
+            Opts = ConfigOpts2#{
                 id => {nkrpc9_server, SrvId},
                 class => {?PACKAGE_CLASS_RPC9_SRV, SrvId},
                 debug => lists:member(nkpacket, Debug),

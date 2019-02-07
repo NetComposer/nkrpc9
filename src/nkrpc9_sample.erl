@@ -26,7 +26,7 @@
 
 -export([start/0, stop/0]).
 -export([to_server/0, to_client/0, server_times/0, client_times/0, http/0]).
--export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/4]).
+-export([rpc9_init/3, rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/4]).
 
 -dialyzer({nowarn_function, start/0}).
 
@@ -211,6 +211,14 @@ http_request(Cmd, Data, Hds) ->
 %% ===================================================================
 %% API callbacks
 %% ===================================================================
+
+
+
+%% @doc Called when a new connection starts
+rpc9_init(_Id, _NkPort, State) ->
+    lager:error("NKLOG RPC9 INIT"),
+    {ok, State}.
+
 
 
 %% @doc
