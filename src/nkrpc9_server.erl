@@ -146,6 +146,8 @@ reply(#{session_pid:=Pid, tid:=TId}, Reply, StateFun) ->
 
 
 %% @private
+get_pid(Pid) when is_pid(Pid) ->
+    Pid;
 get_pid(SrvId) ->
     case nkrpc9_server_protocol:get_local_started(SrvId) of
         [Pid|_] ->

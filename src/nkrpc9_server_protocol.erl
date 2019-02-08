@@ -24,7 +24,6 @@
 
 -export([send_request/3, send_async_request/3, reply/3, reply/4, send_event/3, server_event/2]).
 -export([start_ping/2, stop_ping/1]).
--export([subscribe/2, unsubscribe/2, get_subscriptions/1]).
 -export([stop/1, get_all/1]).
 -export([find_user/1, find_session/1]).
 -export([get_all_started/1, get_local_started/1]).
@@ -128,22 +127,6 @@ start_ping(Pid, MSecs) ->
 stop_ping(Pid) ->
     do_cast(Pid, rpc9_stop_ping).
 
-
-%% @doc Registers with the Events system
-subscribe(Pid, Event) ->
-    do_cast(Pid, {rpc9_subscribe, Event}).
-
-
-%% @doc Unregisters with the Events system
-unsubscribe(Pid, Event) ->
-    do_cast(Pid, {rpc9_unsubscribe, Event}).
-
-
-%% @doc Gets all current subscriptions
-get_subscriptions(Pid) ->
-    do_call(Pid, rpc9_get_subscriptions).
-
-
 %% @doc
 stop(Pid) ->
     do_cast(Pid, rpc9_stop).
@@ -202,11 +185,11 @@ find_session(SessId) ->
     from :: {pid(), term()} | {async, pid(), term()}
 }).
 
--record(reg, {
-    event :: term(),
-    index :: integer(),
-    mon :: reference()
-}).
+%%-record(reg, {
+%%    event :: term(),
+%%    index :: integer(),
+%%    mon :: reference()
+%%}).
 
 -record(state, {
     srv_id :: nkservice:id(),
@@ -218,7 +201,6 @@ find_session(SessId) ->
     ext_op_time :: integer(),
     local :: binary(),
     remote :: binary(),
-    regs = [] :: [#reg{}],
     user_id = <<>> :: nkservice:user_id(),
     user_state = #{} :: nkservice:user_state()
 }).
@@ -361,17 +343,12 @@ conn_encode(Msg, _NkPort) when is_binary(Msg) ->
 conn_handle_call({rpc9_send_req, Cmd, Data}, From, NkPort, State) ->
     send_request(Cmd, Data, From, NkPort, State);
 
-conn_handle_call(rpc9_get_subscriptions, From, _NkPort, #state{regs=Regs}=State) ->
-    Data = [Event || #reg{event=Event} <- Regs],
-    gen_server:reply(From, {ok, Data}),
-    {ok, State};
-
 conn_handle_call(get_state, From, _NkPort, State) ->
     gen_server:reply(From, lager:pr(State, ?MODULE)),
     {ok, State};
 
-conn_handle_call(Msg, From, _NkPort, State) ->
-    handle(rpc9_handle_call, [Msg, From], State).
+conn_handle_call(Msg, From, NkPort, State) ->
+    handle(rpc9_handle_call, [Msg, From], NkPort, State).
 
 
 -spec conn_handle_cast(term(), nkpacket:nkport(), #state{}) ->
@@ -451,42 +428,8 @@ conn_handle_cast({rpc9_start_ping, MSecs}, _NkPort, #state{ping=Ping}=State) ->
 conn_handle_cast(rpc9_stop_ping, _NkPort, State) ->
     {ok, State#state{ping=undefined}};
 
-conn_handle_cast({rpc9_subscribe, Event}, _NkPort, State) ->
-    #state{regs=Regs} = State,
-    case handle(rpc9_subscribe, [Event], State) of
-        {ok, EventId, Pid, State2} ->
-            Regs2 = case lists:keyfind(EventId, #reg.index, Regs) of
-                false ->
-                    ?DEBUG("registered event ~p", [Event], State),
-                    Mon = monitor(process, Pid),
-                    [#reg{index=EventId, event=Event, mon=Mon}|Regs];
-                #reg{} ->
-                    ?DEBUG("event ~p already registered", [Event], State),
-                    Regs
-            end,
-            {ok, State2#state{regs=Regs2}};
-        {ok, State2} ->
-            {ok, State2}
-    end;
-
-conn_handle_cast({rpc9_unsubscribe, Event}, _NkPort, #state{srv_id=_SrvId}=State) ->
-    #state{regs=Regs} = State,
-    case handle(rpc9_unsubscribe, [Event], State) of
-        {ok, EventId, State2} ->
-            case lists:keytake(EventId, #reg.index, Regs) of
-                {value, #reg{mon=Mon}, Regs2} ->
-                    demonitor(Mon),
-                    ?DEBUG("unregistered event ~p", [Event], State),
-                    {ok, State2#state{regs=Regs2}};
-                false ->
-                    {ok, State2}
-            end;
-        {ok, State2} ->
-            {ok, State2}
-    end;
-
-conn_handle_cast(Msg, _NkPort, State) ->
-    handle(rpc9_handle_cast, [Msg], State).
+conn_handle_cast(Msg, NkPort, State) ->
+    handle(rpc9_handle_cast, [Msg], NkPort, State).
 
 
 -spec conn_handle_info(term(), nkpacket:nkport(), #state{}) ->
@@ -498,10 +441,6 @@ conn_handle_info(rpc9_send_ping, _NkPort, #state{ping=undefined}=State) ->
 conn_handle_info(rpc9_send_ping, NkPort, #state{ping=Time}=State) ->
     erlang:send_after(Time, self(), rpc9_send_ping),
     send_request(<<"ping">>, #{time=>Time}, undefined, NkPort, State);
-
-%% We receive an event we are subscribed to.
-conn_handle_info({rpc9_server_event, Event}, NkPort, State) ->
-    process_server_event(Event, NkPort, State);
 
 conn_handle_info({timeout, _, {rpc9_op_timeout, TId}}, _NkPort, State) ->
     case extract_op(TId, State) of
