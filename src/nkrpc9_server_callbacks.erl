@@ -23,8 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([msg/1]).
 -export([request/3]).
--export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/4]).
--export([rpc9_subscribe/2, rpc9_unsubscribe/2]).
+-export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/4, rpc9_result/5]).
 -export([rpc9_init/3, rpc9_handle_call/3, rpc9_handle_cast/2, rpc9_handle_info/2,
          rpc9_terminate/2]).
 
@@ -71,6 +70,9 @@ msg(_)   		           -> continue.
 -type http_req() :: nkrpc9_server_http:req().
 -type http_reply() :: nkrpc9_server_http:http_reply().
 -type nkport() :: nkpacket:nkport().
+-type op() :: #{cmd=>cmd(), data=>data(), tid=>integer()}.
+-type result() :: binary().
+-type from() :: {pid(), reference()}.
 
 
 %% @doc called when a new http request has been received
@@ -124,7 +126,7 @@ rpc9_allow(_Cmd, _Data, _Req, _State) ->
     false.
 
 
-%% @doc Called when then client sends a request
+%% @doc Called when then server receives a request
 -spec rpc9_request(cmd(), data(), request(), state()) ->
     {login, UserId::binary(), data(), state()} |
     {reply, data(), state()} |
@@ -135,7 +137,7 @@ rpc9_request(_Cmd, _Data, _Req, State) ->
     {error, not_implemented, State}.
 
 
-%% @doc Called when then client sends a request
+%% @doc Called when then server receives a request
 -spec rpc9_event(event(), data(), request(), state()) ->
     {ok, state()} |
     {error, nkserver:msg(), state()}.
@@ -144,20 +146,12 @@ rpc9_event(_Event, _Data, _Req, State) ->
     {ok, State}.
 
 
-%% @doc
--spec rpc9_subscribe(term(), state()) ->
-    {ok, state()}.
+%% @doc Called when a result has been received and must be sent to the caller
+-spec rpc9_result(result(), data(), op(), from(), state()) ->
+    {reply, result(), data(), state()} | {noreply, state()}.
 
-rpc9_subscribe(_Event, State) ->
-    {ok, State}.
-
-
-%% @doc Called when a new connection starts
--spec rpc9_unsubscribe(term(), state()) ->
-    {ok, state()}.
-
-rpc9_unsubscribe(_Event, State) ->
-    {ok, State}.
+rpc9_result(Result, Data, _Op, _From, State) ->
+    {reply, Result, Data, State}.
 
 
 %% @doc Called when a new connection starts
@@ -191,7 +185,7 @@ rpc9_handle_cast(Msg, State) ->
     {ok, state()} | continue().
 
 rpc9_handle_info(Msg, State) ->
-    ?LLOG(error, "unexpected cast ~p", [Msg]),
+    ?LLOG(error, "unexpected info ~p", [Msg]),
     {ok, State}.
 
 

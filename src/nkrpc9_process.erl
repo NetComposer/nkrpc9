@@ -21,7 +21,7 @@
 %% @doc
 -module(nkrpc9_process).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
--export([request/5, event/5]).
+-export([request/5, event/5, result/6]).
 -include_lib("nkserver/include/nkserver.hrl").
 
 
@@ -55,6 +55,19 @@ request(SrvId, Cmd, Data, Req, State) ->
 %% @doc
 event(SrvId, Event, Data, Req, State) ->
     event_parse(SrvId, Event, Data, Req, State).
+
+
+%% @doc
+result(SrvId, Result, Data, Op, From, State) ->
+    case ?CALL_SRV(SrvId, rpc9_result, [Result, Data, Op, From, State]) of
+        {reply, _Result2, _Data2, State2} when From==undefined ->
+            {ok, State2};
+        {reply, Result2, Data2, State2} ->
+            gen_server:reply(From, {ok, Result2, Data2}),
+            {ok, State2};
+        {noreply, State2} ->
+            {ok, State2}
+    end.
 
 
 

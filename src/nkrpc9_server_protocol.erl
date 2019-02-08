@@ -261,7 +261,7 @@ conn_init(NkPort) ->
     set_debug(State1),
     Idle = maps:get(idle_timeout, Opts),
     ?LLOG(info, "new connection (~s, ~p) (Idle:~p)", [Remote, self(), Idle], State1),
-    {ok, State2} = handle(rpc9_init, [SrvId, NkPort], State1),
+    {ok, State2} = handle(rpc9_init, [SrvId, NkPort], NkPort, State1),
     {ok, State2}.
 
 
@@ -294,7 +294,7 @@ conn_parse({text, Text}, NkPort, State) ->
                             ?MSG("received ~s", [Msg], State)
                     end,
                     Data = maps:get(<<"data">>, Msg, #{}),
-                    process_client_resp(Result, Data, Trans, NkPort, State2);
+                    process_client_resp(Trans, Result, Data, State2);
                 not_found ->
                     ?LLOG(info,
                         "received client response for unknown req: ~p, ~p, ~p",
@@ -458,32 +458,25 @@ conn_handle_info({'EXIT', _Pid, _}, _NkPort, State) ->
     {ok, State};
 
 conn_handle_info({'DOWN', Ref, process, Pid, Reason}=Info, NkPort, State) ->
-    #state{regs=Regs} = State,
-    case lists:keytake(Ref, #reg.mon, Regs) of
-        {value, #reg{event=Event}, Regs2} ->
-            subscribe(self(), Event),
-            {ok, State#state{regs=Regs2}};
+    case extract_op_mon(Ref, State) of
+        {true, TId, #trans{op=Op}, State2} ->
+            ?LLOG(notice, "operation ~p (~p) process down! (~p, ~p)",
+                  [Op, TId, Pid, Reason], State),
+            send_reply_error(process_down, TId, NkPort, State2);
         false ->
-            case extract_op_mon(Ref, State) of
-                {true, TId, #trans{op=Op}, State2} ->
-                    ?LLOG(notice, "operation ~p (~p) process down! (~p, ~p)",
-                          [Op, TId, Pid, Reason], State),
-                    send_reply_error(process_down, TId, NkPort, State2);
-                false ->
-                    handle(rpc9_handle_info, [Info], State)
-            end
+            handle(rpc9_handle_info, [Info], NkPort, State)
     end;
 
-conn_handle_info(Info, _NkPort, State) ->
-    handle(rpc9_handle_info, [Info], State).
+conn_handle_info(Info, NkPort, State) ->
+    handle(rpc9_handle_info, [Info], NkPort, State).
 
 
 %% @doc Called when the connection stops
 -spec conn_stop(Reason::term(), nkpacket:nkport(), #state{}) ->
     ok.
 
-conn_stop(Reason, _NkPort, State) ->
-    catch handle(rpc9_terminate, [Reason], State).
+conn_stop(Reason, NkPort, State) ->
+    catch handle(rpc9_terminate, [Reason], NkPort, State).
 
 
 %% ===================================================================
@@ -540,24 +533,10 @@ process_client_event(Event, Data, #state{srv_id=SrvId, user_state=UserState}=Sta
 
 
 %% @private
-process_client_resp(Result, Data, #trans{from=From}, _NkPort, State) ->
-    nklib_util:reply(From, {ok, Result, Data}),
-    {ok, State}.
-
-
-%% @private
-process_server_event(Event, NkPort, State) ->
-    Req = make_req(<<>>, State),
-    case handle(rpc9_server_event, [Event, Req#{timeout_pending=>false}], State) of
-        {ok, State2} ->
-            {ok, State2};
-        {forward, Data2} ->
-            Msg = #{
-                cmd => <<"event">>,
-                data => Data2
-            },
-            send(Msg, NkPort, State)
-    end.
+process_client_resp(#trans{op=Op, from=From}, Result, Data, State) ->
+    #state{srv_id = SrvId, user_state = UserState} = State,
+    {ok, UserState2} = nkrpc9_process:result(SrvId, Result, Data, Op, From, UserState),
+    {ok, State#state{user_state = UserState2}}.
 
 
 
@@ -792,8 +771,35 @@ set_debug(#state{srv_id = SrvId}=State) ->
 
 
 %% @private
-handle(Fun, Args, State) ->
-    nkserver_util:handle_user_call(Fun, Args, State, #state.srv_id, #state.user_state).
+%% Will call the service's functions
+handle(Fun, Args, NkPort, #state{srv_id=SrvId, user_state=UserState}=State) ->
+    case ?CALL_SRV(SrvId, Fun, Args++[UserState]) of
+        {reply, Reply, UserState2} ->
+            {reply, Reply, State#state{user_state=UserState2}};
+        {reply, Reply, UserState2, Time} ->
+            {reply, Reply, State#state{user_state=UserState2}, Time};
+        {noreply, UserState2} ->
+            {noreply, State#state{user_state=UserState2}};
+        {noreply, UserState2, Time} ->
+            {noreply, State#state{user_state=UserState2}, Time};
+        {stop, Reason, Reply, UserState2} ->
+            {stop, Reason, Reply, State#state{user_state=UserState2}};
+        {stop, Reason, UserState2} ->
+            {stop, Reason, State#state{user_state=UserState2}};
+        {ok, UserState2} ->
+            {ok, State#state{user_state=UserState2}};
+        {send_request, Cmd, Data, From,UserState2} ->
+            send_request(Cmd, Data, From, NkPort, State#state{user_state=UserState2});
+        {send_request, Cmd, Data, UserState2} ->
+            send_request(Cmd, Data, undefined, NkPort, State#state{user_state=UserState2});
+        {send_event, Cmd, Data, UserState2} ->
+            send_event(Cmd, Data, NkPort, State#state{user_state=UserState2});
+        continue ->
+            continue;
+        Other ->
+            lager:warning("invalid response for ~p:~p(~p): ~p", [SrvId, Fun, Args, Other]),
+            error(invalid_handle_response)
+    end.
 
 
 %% @private

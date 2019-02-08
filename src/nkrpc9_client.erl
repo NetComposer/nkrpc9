@@ -24,6 +24,7 @@
 -export([start_link/2, get_sup_spec/2]).
 -export([stop/1, update/2]).
 -export([send_request/3, send_async_request/3, reply/2, reply/3, send_event/3]).
+-export([call/2, call/3, cast/2]).
 -export_type([request/0, reply/0, async_reply/0, event/0]).
 
 -include("nkrpc9.hrl").
@@ -143,8 +144,34 @@ reply(#{session_pid:=Pid, tid:=TId}, Reply, StateFun) ->
     nkrpc9_client_protocol:reply(Pid, TId, Reply, StateFun).
 
 
+%% @doc
+call(SrvId, Msg) ->
+    call(SrvId, Msg, 5000).
+
+
+%% @doc
+call(SrvId, Msg, Timeout) ->
+    case get_pid(SrvId) of
+        Pid when is_pid(Pid) ->
+            gen_server:call(Pid, Msg, Timeout);
+        undefined ->
+            {error, no_transports}
+    end.
+
+
+%% @doc
+cast(SrvId, Msg) ->
+    case get_pid(SrvId) of
+        Pid when is_pid(Pid) ->
+            gen_server:cast(Pid, Msg);
+        undefined ->
+            {error, no_transports}
+    end.
+
 
 %% @private
+get_pid(Pid) when is_pid(Pid) ->
+    Pid;
 get_pid(SrvId) ->
     case nkrpc9_client_protocol:get_local_started(SrvId) of
         [Pid|_] ->
