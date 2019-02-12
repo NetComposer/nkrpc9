@@ -20,7 +20,8 @@
 
 %% @doc
 -module(nkrpc9_server_http).
--export([is_http/1, get_headers/1, get_qs/1, get_basic_auth/1]).
+-export([is_http/1, get_headers/1, get_qs/1, get_basic_auth/1, get_ct/1]).
+-export([iter_body/4, stream_start/3, stream_body/2, stream_stop/1]).
 -export([init/4, terminate/3]).
 -export_type([method/0, reply/0, code/0, headers/0, body/0, req/0, path/0, http_qs/0]).
 
@@ -90,10 +91,7 @@ is_http(_) -> false.
     headers().
 
 get_headers(#{'_cowreq':=CowReq}) ->
-    cowboy_req:headers(CowReq);
-
-get_headers(_) ->
-    #{}.
+    cowboy_req:headers(CowReq).
 
 
 %% @doc
@@ -101,10 +99,7 @@ get_headers(_) ->
     http_qs().
 
 get_qs(#{'_cowreq':=CowReq}) ->
-    cowboy_req:parse_qs(CowReq);
-
-get_qs(_) ->
-    #{}.
+    cowboy_req:parse_qs(CowReq).
 
 
 %% @doc
@@ -117,11 +112,69 @@ get_basic_auth(#{'_cowreq':=CowReq}) ->
             {ok, User, Pass};
         _ ->
             undefined
-    end;
+    end.
 
-get_basic_auth(_) ->
-    undefined.
+%% @doc
+-spec get_ct(req()) ->
+    {binary(), binary(), list()}.
 
+get_ct(#{'_cowreq':=CowReq}) ->
+    cowboy_req:parse_header(<<"content-type">>, CowReq).
+
+
+-type iter_function() :: fun((binary(), term()) -> term()).
+-type iter_opts() :: #{max_chunk_size=>integer(), max_chunk_time=>integer()}.
+
+
+%% @doc
+-spec iter_body(req(), iter_function(), term(), iter_opts()) ->
+    {term(), req()}.
+
+iter_body(#{'_cowreq':=CowReq}=Req, Opts, Fun, Acc0) ->
+    case do_iter_body(CowReq, Opts, Fun, Acc0) of
+        {ok, Result, CowReq2} ->
+            {ok, Result, Req#{'_cowreq':=CowReq2}};
+        {error, Error, CowReq2} ->
+            {error, Error, Req#{'_cowreq':=CowReq2}}
+    end.
+
+
+%% @private
+do_iter_body(CowReq, Opts, Fun, Acc) ->
+    MaxChunkSize = maps:get(max_chunk_size, Opts, 8*1024*1024),
+    MaxChunkTime = maps:get(max_chunk_time, Opts, 15000),
+    Opts2 = #{length => MaxChunkSize, period => MaxChunkTime},
+    {Res, Data, CowReq2} = cowboy_req:read_body(CowReq, Opts2),
+    case Fun(Data, Acc) of
+        {ok, Acc2} when Res==ok ->
+            {ok, Acc2, CowReq2};
+        {ok, Acc2} when Res==more ->
+            do_iter_body(CowReq2, Opts, Fun, Acc2);
+        {error, Error} ->
+            {error, Error, CowReq2}
+    end.
+
+
+%% @doc Streamed responses
+%% First, call this function
+%% Then call stream_body/2 for each chunk, and finish with {stop, Req}
+
+stream_start(Code, Hds, #{'_cowreq':=CowReq}=Req) when is_map(Hds) ->
+    CowReq2 = nkpacket_cowboy:stream_reply(Code, Hds, CowReq),
+    Req#{'_cowreq':=CowReq2};
+
+stream_start(Code, Hds, Req) when is_list(Hds) ->
+    stream_start(Code, maps:from_list(Hds), Req).
+
+
+%% @doc
+stream_body(Body, #{'_cowreq':=CowReq}) ->
+    ok = nkpacket_cowboy:stream_body(Body, nofin, CowReq).
+
+
+%% @doc
+stream_stop(#{'_cowreq':=CowReq}) ->
+    ok = nkpacket_cowboy:stream_body(<<>>, fin, CowReq).
 
 
 %% ===================================================================
@@ -130,8 +183,8 @@ get_basic_auth(_) ->
 
 
 %% @private
-%% Called from nkpacket_transport_http:cowboy_init/5
-init(<<"POST">>, [], CowReq, NkPort) ->
+%% Called from middle9_server_protocol:http_init/5
+init(Method, Path, CowReq, NkPort) ->
     Local = nkpacket:get_local_bin(NkPort),
     {Ip, Port} = cowboy_req:peer(CowReq),
     Remote = <<
@@ -140,56 +193,61 @@ init(<<"POST">>, [], CowReq, NkPort) ->
     >>,
     {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
     set_debug(SrvId),
+    SessionId = nklib_util:luid(),
+    Req = #{
+        srv => SrvId,
+        start => nklib_util:l_timestamp(),
+        session_id => SessionId,
+        session_pid => self(),
+        local => Local,
+        remote => Remote,
+        tid => erlang:phash2(SessionId),
+        timeout_pending => false,
+        debug => get(nkrpc9_debug),
+        '_cowreq' => CowReq
+    },
     try
-        case cowboy_req:method(CowReq) of
-            <<"POST">> ->
-                ok;
+        case Method of
+            <<"POST">> when Path == [] ->
+                {ok, Cmd, Data, CowReq2} = get_cmd_body(SrvId, CowReq),
+                Req2 = Req#{
+                    cmd => Cmd,
+                    data => Data,
+                    '_cowreq' := CowReq2
+                },
+                case nkrpc9_process:request(SrvId, Cmd, Data, Req2, #{}) of
+                    {login, _UserId, Reply, _State} ->
+                        send_msg_ok(Reply, CowReq2);
+                    {reply, Reply, _State} ->
+                        send_msg_ok(Reply, CowReq2);
+                    {ack, Pid, _State} ->
+                        Mon = case is_pid(Pid) of
+                            true ->
+                                monitor(process, Pid);
+                            false ->
+                                undefined
+                        end,
+                        wait_ack(Req, Mon);
+                    {error, Error, _State} ->
+                        send_msg_error(SrvId, Error, CowReq2)
+                end;
             _ ->
-                throw({400, #{}, <<"Only POST is supported">>})
-        end,
-        {ok, Cmd, Data, CowReq2} = get_body(SrvId, CowReq),
-        SessionId = nklib_util:luid(),
-        Req = #{
-            srv => SrvId,
-            start => nklib_util:l_timestamp(),
-            session_id => SessionId,
-            session_pid => self(),
-            local => Local,
-            remote => Remote,
-            tid => erlang:phash2(SessionId),
-            cmd => Cmd,
-            data => Data,
-            timeout_pending => false,
-            debug => get(nkrpc9_debug),
-            '_cowreq' => CowReq2
-        },
-        case nkrpc9_process:request(SrvId, Cmd, Data, Req, #{}) of
-            {login, _UserId, Reply, _State} ->
-                send_msg_ok(Reply, CowReq2);
-            {reply, Reply, _State} ->
-                send_msg_ok(Reply, CowReq2);
-            {ack, Pid, _State} ->
-                Mon = case is_pid(Pid) of
-                    true ->
-                        monitor(process, Pid);
-                    false ->
-                        undefined
-                end,
-                wait_ack(Req, Mon);
-            {error, Error, _State} ->
-                send_msg_error(SrvId, Error, CowReq2)
+                case ?CALL_SRV(SrvId, rpc9_http, [Method, Path, Req]) of
+                    {http, Code, RHds, RBody, #{'_cowreq':=CowReq3}} ->
+                        send_http_reply(Code, RHds, RBody, CowReq3);
+                    {stop, #{'_cowreq':=CowReq3}} ->
+                        ?DEBUG("replying stream stop", [], Req),
+                        {ok, CowReq3, []};
+                    {redirect, Path} ->
+                        {redirect, Path};
+                    {cowboy_static, Opts} ->
+                        {cowboy_static, Opts}
+                end
         end
     catch
-        throw:{Code, Hds, TReply} ->
-            send_http_reply(Code, Hds, TReply, CowReq)
-    end;
-
-init(_, [], CowReq, _NkPort) ->
-    send_http_reply(400, #{}, <<"Only POST is supported">>, CowReq);
-
-init(_, _Path, CowReq, _NkPort) ->
-    send_http_reply(404, #{}, <<"Path not found">>, CowReq).
-
+        throw:{TCode, THds, TReply} ->
+            send_http_reply(TCode, THds, TReply, CowReq)
+    end.
 
 
 %% @private
@@ -209,11 +267,14 @@ set_debug(SrvId) ->
 
 
 %% @private
-get_body(SrvId, CowReq) ->
+get_cmd_body(SrvId, CowReq) ->
     MaxBody = nkserver:get_plugin_config(SrvId, nkrpc9_server, http_max_body),
     case cowboy_req:body_length(CowReq) of
         BL when is_integer(BL), BL =< MaxBody ->
             %% https://ninenines.eu/docs/en/cowboy/2.1/guide/req_body/
+
+
+
             {ok, Body, CowReq2} = cowboy_req:read_body(CowReq, #{length=>infinity}),
               case cowboy_req:header(<<"content-type">>, CowReq) of
                 <<"application/json">> ->
@@ -239,18 +300,18 @@ get_body(SrvId, CowReq) ->
 wait_ack(#{srv:=SrvId, tid:=TId, '_cowreq':=CowReq}=Req, Mon) ->
     ExtTime = nkserver:get_plugin_config(SrvId, nkrpc9_server, ext_cmd_timeout),
     receive
-        {'$gen_cast', {rpc9_reply_login, _UserId, Reply, TId}} ->
+        {'$gen_cast', {rpc9_reply_login, _UserId, Reply, TId, _StateFun}} ->
             nklib_util:demonitor(Mon),
             send_msg_ok(Reply, CowReq);
-        {'$gen_cast', {rpc9_reply_ok, Reply, TId}} ->
+        {'$gen_cast', {rpc9_reply_ok, Reply, TId, _StateFun}} ->
             nklib_util:demonitor(Mon),
             send_msg_ok(Reply, CowReq);
-        {'$gen_cast', {rpc9_reply_error, Error, TId}} ->
+        {'$gen_cast', {rpc9_reply_error, Error, TId, _StateFun}} ->
             nklib_util:demonitor(Mon),
             send_msg_error(SrvId, Error, CowReq);
-        {'$gen_cast', {rpc9_reply_ack, undefined, TId}} ->
+        {'$gen_cast', {rpc9_reply_ack, undefined, TId, _StateFun}} ->
             wait_ack(Req, Mon);
-        {'$gen_cast', {rpc9_reply_ack, Pid, TId}} when is_pid(Pid) ->
+        {'$gen_cast', {rpc9_reply_ack, Pid, TId, _StateFun}} when is_pid(Pid) ->
             nklib_util:demonitor(Mon),
             Mon2 = monitor(process, Pid),
             wait_ack(Req, Mon2);
@@ -293,7 +354,7 @@ send_msg_error(SrvId, Error, CowReq) ->
 
 
 %% @private
-send_http_reply(Code, Hds, Body, CowReq) ->
+send_http_reply(Code, Hds, Body, CowReq) when is_map(Hds) ->
     {Hds2, Body2} = case is_map(Body) orelse is_list(Body) of
         true ->
             {
@@ -306,7 +367,10 @@ send_http_reply(Code, Hds, Body, CowReq) ->
                 to_bin(Body)
             }
     end,
-    {ok, cowboy_req:reply(Code, Hds2, Body2, CowReq), []}.
+    {ok, cowboy_req:reply(Code, Hds2, Body2, CowReq), []};
+
+send_http_reply(Code, Hds, Body, CowReq) when is_list(Hds) ->
+    send_http_reply(Code, maps:from_list(Hds), Body, CowReq).
 
 
 

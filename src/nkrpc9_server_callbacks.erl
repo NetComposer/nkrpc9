@@ -22,10 +22,10 @@
 -module(nkrpc9_server_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([msg/1]).
--export([request/3]).
 -export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/4, rpc9_result/5]).
 -export([rpc9_init/3, rpc9_handle_call/3, rpc9_handle_cast/2, rpc9_handle_info/2,
          rpc9_terminate/2]).
+-export([rpc9_http/3]).
 
 -include("nkrpc9.hrl").
 
@@ -73,35 +73,6 @@ msg(_)   		           -> continue.
 -type op() :: #{cmd=>cmd(), data=>data(), tid=>integer()}.
 -type result() :: binary().
 -type from() :: {pid(), reference()}.
-
-
-%% @doc called when a new http request has been received
--spec request(http_method(), http_path(), http_req()) ->
-    http_reply() |
-    {redirect, Path::binary(), http_req()} |
-    {cowboy_static, cowboy_static:opts()} |
-    {cowboy_rest, Callback::module(), State::term()}.
-
-request(Method, Path, #{srv:=SrvId}=Req) ->
-    #{peer:=Peer} = Req,
-    ?LLOG(debug, "path not found (~p, ~s): ~p from ~s", [SrvId, Method, Path, Peer]),
-    {http, 404, [], <<"NkSERVER RPC9: Path Not Found">>, Req}.
-
-%%request(SrvId, Method, Path, #{srv:=SrvId}=Req) ->
-%%    case nkserver:get_plugin_config(SrvId, nkrpc9, requestCallBack) of
-%%        #{class:=luerl, luerl_fun:=_}=CB ->
-%%            case nkserver_luerl_instance:spawn_callback_spec(SrvId, CB) of
-%%                {ok, Pid} ->
-%%                    process_luerl_req(SrvId, CB, Pid, Req);
-%%                {error, too_many_instances} ->
-%%                    {http, 429, [], <<"NkSERVER RPC9: Too many requests">>, Req}
-%%            end;
-%%        _ ->
-%%            % There is no callback defined
-%%            #{peer:=Peer} = Req,
-%%            ?LLOG(debug, "path not found (~p, ~s): ~p from ~s", [SrvId, Method, Path, Peer]),
-%%            {http, 404, [], <<"NkSERVER RPC9: Path Not Found">>, Req}
-%%    end.
 
 
 
@@ -196,6 +167,18 @@ rpc9_handle_info(Msg, State) ->
 rpc9_terminate(_Reason, State) ->
     {ok, State}.
 
+
+%% @doc called when a new http request has been received
+-spec rpc9_http(http_method(), http_path(), http_req()) ->
+    http_reply() |
+    {redirect, Path::binary(), http_req()} |
+    {cowboy_static, cowboy_static:opts()} |
+    {cowboy_rest, Callback::module(), State::term()}.
+
+rpc9_http(Method, Path, #{srv:=SrvId}=Req) ->
+    #{remote:=Remote} = Req,
+    ?LLOG(debug, "path not found (~p, ~s): ~p from ~s", [SrvId, Method, Path, Remote]),
+    {http, 404, #{}, <<"NkSERVER RPC9: Path Not Found">>, Req}.
 
 
 

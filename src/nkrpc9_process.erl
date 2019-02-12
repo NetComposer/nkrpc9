@@ -70,7 +70,6 @@ result(SrvId, Result, Data, Op, From, State) ->
     end.
 
 
-
 %% @private
 request_parse(SrvId, Cmd, Data, Req, State) ->
     case ?CALL_SRV(SrvId, rpc9_parse, [Cmd, Data, Req, State]) of
