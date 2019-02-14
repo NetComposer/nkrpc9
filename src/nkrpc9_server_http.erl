@@ -149,7 +149,7 @@ do_iter_body(CowReq, Opts, Fun, Acc) ->
         {ok, Acc2} when Res==ok ->
             {ok, Acc2, CowReq2};
         {ok, Acc2} when Res==more ->
-            do_iter_body(CowReq2, Opts, Fun, Acc2);
+            ?MODULE:do_iter_body(CowReq2, Opts, Fun, Acc2);
         {error, Error} ->
             {error, Error, CowReq2}
     end.
