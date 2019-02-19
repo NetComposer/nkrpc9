@@ -145,8 +145,8 @@ reply(#{session_pid:=Pid, tid:=TId}, Reply, StateFun) ->
     nkrpc9_server_protocol:reply(Pid, TId, Reply, StateFun).
 
 %% @doc End the current request
-close(#{session_pid:=_}=Req) ->
-    nkrpc9_server_protocol:stop(Req).
+close(#{session_pid:=Pid}) ->
+    nkrpc9_server_protocol:stop(Pid).
 
 %% @private
 get_pid(Pid) when is_pid(Pid) ->
