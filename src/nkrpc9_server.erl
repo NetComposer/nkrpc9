@@ -23,7 +23,7 @@
 
 -export([start_link/2, get_sup_spec/2]).
 -export([stop/1, update/2]).
--export([send_request/3, send_async_request/3, send_event/3, reply/2, reply/3]).
+-export([send_request/3, send_async_request/3, send_event/3, reply/2, reply/3, close/1]).
 -export_type([id/0, cmd/0, event/0, data/0, request/0, reply/0, async_reply/0]).
 
 -include("nkrpc9.hrl").
@@ -144,6 +144,9 @@ reply(#{session_pid:=Pid, tid:=TId}, Reply) ->
 reply(#{session_pid:=Pid, tid:=TId}, Reply, StateFun) ->
     nkrpc9_server_protocol:reply(Pid, TId, Reply, StateFun).
 
+%% @doc End the current request
+close(#{session_pid:=_}=Req) ->
+    nkrpc9_server_protocol:stop(Req).
 
 %% @private
 get_pid(Pid) when is_pid(Pid) ->
