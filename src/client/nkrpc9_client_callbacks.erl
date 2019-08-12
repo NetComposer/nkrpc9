@@ -60,7 +60,7 @@ msg(_)   		                    -> continue.
 -type cmd() :: nkrpc9_server:cmd().
 -type event() :: nkrpc9_server:event().
 -type data() :: nkrpc9_server:data().
--type state() :: nkapi_server:user_state().
+-type state() :: map().
 -type continue() :: nkserver_callbacks:continue().
 -type id() :: nkserver:module_id().
 -type nkport() :: nkpacket:nkport().
@@ -95,7 +95,7 @@ rpc9_allow(_Cmd, _Data, _Req, _State) ->
     {login, UserId::binary(), data(), state()} |
     {reply, data(), state()} |
     {ack, pid()|undefined, state()} |
-    {error, nkserver:msg(), state()}.
+    {error, nkserver:status(), state()}.
 
 rpc9_request(_Cmd, _Data, _Req, State) ->
     {error, not_implemented, State}.
@@ -104,7 +104,7 @@ rpc9_request(_Cmd, _Data, _Req, State) ->
 %% @doc Called when then client receives an event
 -spec rpc9_event(event(), data(), request(), state()) ->
     {ok, state()} |
-    {error, nkserver:msg(), state()}.
+    {error, nkserver:status(), state()}.
 
 rpc9_event(_Event, _Data, _Req, State) ->
     {ok, State}.

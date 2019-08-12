@@ -18,13 +18,14 @@
 %%
 %% -------------------------------------------------------------------
 
--module(nkrpc9_server).
+-module(nkrpc9_client).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([start_link/2, get_sup_spec/2]).
 -export([stop/1, update/2]).
--export([send_request/3, send_async_request/3, send_event/3, reply/2, reply/3]).
--export_type([id/0, cmd/0, event/0, data/0, request/0, reply/0, async_reply/0]).
+-export([send_request/3, send_async_request/3, reply/2, reply/3, send_event/3]).
+-export([call/2, call/3, cast/2]).
+-export_type([request/0, reply/0, async_reply/0, event/0]).
 
 -include("nkrpc9.hrl").
 
@@ -34,12 +35,6 @@
 %% ===================================================================
 
 -type id() :: nkserver:id().
-
--type cmd() :: binary().
-
--type event() :: binary().
-
--type data() :: map().
 
 -type config() :: map().
 
@@ -64,20 +59,23 @@
 -type async_reply() ::
     {login, UserId::binary(), reply(), request()} |
     {ok, reply(), request()} |
-    {error, nkserver_msg:msg(), request()} |
+    {error, nkserver:status(), request()} |
     {ack, pid()|undefined, request()}.
+
+
+-type event() :: map().
 
 
 %% ===================================================================
 %% Public
 %% ===================================================================
 
-%% @doc
+%% @doc Starts a new nkrpc9_http service
 -spec start_link(id(), config()) ->
     {ok, pid()} | {error, term()}.
 
 start_link(Id, Config) ->
-    nkserver:start_link(?PACKAGE_CLASS_RPC9_SRV, Id, Config).
+    nkserver:start_link(nkrpc9_client, Id, Config).
 
 
 %% @doc Retrieves a service as a supervisor child specification
@@ -85,7 +83,7 @@ start_link(Id, Config) ->
     {ok, supervisor:child_spec()} | {error, term()}.
 
 get_sup_spec(Id, Config) ->
-    nkserver:get_sup_spec(?PACKAGE_CLASS_RPC9_SRV, Id, Config).
+    nkserver:get_sup_spec(nkrpc9_client, Id, Config).
 
 
 stop(Id) ->
@@ -99,7 +97,7 @@ update(Id, Config) ->
     Config2 = nklib_util:to_map(Config),
     Config3 = case Config2 of
         #{plugins:=Plugins} ->
-            Config2#{plugins:=[nkrpc9_server|Plugins]};
+            Config2#{plugins:=[nkrpc9_client|Plugins]};
         _ ->
             Config2
     end,
@@ -110,7 +108,7 @@ update(Id, Config) ->
 send_request(SrvId, Cmd, Data) ->
     case get_pid(SrvId) of
         Pid when is_pid(Pid) ->
-            nkrpc9_server_protocol:send_request(Pid, Cmd, Data);
+            nkrpc9_client_protocol:send_request(Pid, Cmd, Data);
         undefined ->
             {error, no_transports}
     end.
@@ -120,36 +118,62 @@ send_request(SrvId, Cmd, Data) ->
 send_async_request(SrvId, Cmd, Data) ->
     case get_pid(SrvId) of
         Pid when is_pid(Pid) ->
-            nkrpc9_server_protocol:send_async_request(Pid, Cmd, Data);
+            nkrpc9_client_protocol:send_async_request(Pid, Cmd, Data);
         undefined ->
             {error, no_transports}
     end.
 
 
-%% @doc Send an event to the server
+%% @doc Send an event to the client
 send_event(SrvId, Event, Data) ->
     case get_pid(SrvId) of
         Pid when is_pid(Pid) ->
-            nkrpc9_server_protocol:send_event(Pid, Event, Data);
+            nkrpc9_client_protocol:send_event(Pid, Event, Data);
         undefined ->
             {error, no_transports}
     end.
 
+
 %% @doc Reply to an asynchronous request
 reply(#{session_pid:=Pid, tid:=TId}, Reply) ->
-    nkrpc9_server_protocol:reply(Pid, TId, Reply).
+    nkrpc9_client_protocol:reply(Pid, TId, Reply).
 
 
 %% @doc Reply to an asynchronous request updating state
 reply(#{session_pid:=Pid, tid:=TId}, Reply, StateFun) ->
-    nkrpc9_server_protocol:reply(Pid, TId, Reply, StateFun).
+    nkrpc9_client_protocol:reply(Pid, TId, Reply, StateFun).
+
+
+%% @doc
+call(SrvId, Msg) ->
+    call(SrvId, Msg, 5000).
+
+
+%% @doc
+call(SrvId, Msg, Timeout) ->
+    case get_pid(SrvId) of
+        Pid when is_pid(Pid) ->
+            gen_server:call(Pid, Msg, Timeout);
+        undefined ->
+            {error, no_transports}
+    end.
+
+
+%% @doc
+cast(SrvId, Msg) ->
+    case get_pid(SrvId) of
+        Pid when is_pid(Pid) ->
+            gen_server:cast(Pid, Msg);
+        undefined ->
+            {error, no_transports}
+    end.
 
 
 %% @private
 get_pid(Pid) when is_pid(Pid) ->
     Pid;
 get_pid(SrvId) ->
-    case nkrpc9_server_protocol:get_local_started(SrvId) of
+    case nkrpc9_client_protocol:get_local_started(SrvId) of
         [Pid|_] ->
             Pid;
         [] ->

@@ -6,8 +6,4 @@
 %% ===================================================================
 
 
-
--define(PACKAGE_CLASS_RPC9_SRV, <<"ServerRpc9">>).
--define(PACKAGE_CLASS_RPC9_CLIENT, <<"ClientRpc9">>).
-
 -endif.

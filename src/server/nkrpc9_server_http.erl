@@ -20,7 +20,6 @@
 
 %% @doc
 -module(nkrpc9_server_http).
--export([is_http/1, get_headers/1, get_qs/1, get_basic_auth/1, get_ct/1]).
 -export([iter_body/4, stream_start/3, stream_body/2, stream_stop/1]).
 -export([init/4, terminate/3]).
 -export_type([method/0, reply/0, code/0, headers/0, body/0, req/0, path/0, http_qs/0]).
@@ -79,47 +78,6 @@
 %% Public functions
 %% ===================================================================
 
-
--spec is_http(req()) ->
-    headers().
-
-is_http(#{'_cowreq':=_}) -> true;
-is_http(_) -> false.
-
-
--spec get_headers(req()) ->
-    headers().
-
-get_headers(#{'_cowreq':=CowReq}) ->
-    cowboy_req:headers(CowReq).
-
-
-%% @doc
--spec get_qs(req()) ->
-    http_qs().
-
-get_qs(#{'_cowreq':=CowReq}) ->
-    cowboy_req:parse_qs(CowReq).
-
-
-%% @doc
--spec get_basic_auth(req()) ->
-    {ok, binary(), binary()} | undefined.
-
-get_basic_auth(#{'_cowreq':=CowReq}) ->
-    case cowboy_req:parse_header(<<"authorization">>, CowReq) of
-        {basic, User, Pass} ->
-            {ok, User, Pass};
-        _ ->
-            undefined
-    end.
-
-%% @doc
--spec get_ct(req()) ->
-    {binary(), binary(), list()}.
-
-get_ct(#{'_cowreq':=CowReq}) ->
-    cowboy_req:parse_header(<<"content-type">>, CowReq).
 
 
 -type iter_function() :: fun((binary(), term()) -> term()).
@@ -195,6 +153,7 @@ init(Method, Path, CowReq, NkPort) ->
     set_debug(SrvId),
     SessionId = nklib_util:luid(),
     Req = #{
+        class => ?MODULE,
         srv => SrvId,
         start => nklib_util:l_timestamp(),
         session_id => SessionId,
@@ -261,20 +220,17 @@ terminate(_Reason, _Req, _Opts) ->
 
 %% @private
 set_debug(SrvId) ->
-    Debug = nkserver:get_plugin_config(SrvId, nkrpc9_server, debug),
+    Debug = nkserver:get_cached_config(SrvId, nkrpc9_server, debug),
     Http = lists:member(protocol, Debug),
     put(nkrpc9_debug, Http).
 
 
 %% @private
 get_cmd_body(SrvId, CowReq) ->
-    MaxBody = nkserver:get_plugin_config(SrvId, nkrpc9_server, http_max_body),
+    MaxBody = nkserver:get_cached_config(SrvId, nkrpc9_server, http_max_body),
     case cowboy_req:body_length(CowReq) of
         BL when is_integer(BL), BL =< MaxBody ->
             %% https://ninenines.eu/docs/en/cowboy/2.1/guide/req_body/
-
-
-
             {ok, Body, CowReq2} = cowboy_req:read_body(CowReq, #{length=>infinity}),
               case cowboy_req:header(<<"content-type">>, CowReq) of
                 <<"application/json">> ->
@@ -285,7 +241,7 @@ get_cmd_body(SrvId, CowReq) ->
                             Data = maps:get(<<"data">>, Json, #{}),
                             {ok, Cmd, Data, CowReq2};
                         _ ->
-                            throw({400, <<"Invalid API body">>})
+                            throw({400, #{}, <<"Invalid API body">>})
                     end;
                 _ ->
                     throw({400, #{}, <<"Invalid Content-Type">>})
@@ -298,7 +254,7 @@ get_cmd_body(SrvId, CowReq) ->
 
 %% @private
 wait_ack(#{srv:=SrvId, tid:=TId, '_cowreq':=CowReq}=Req, Mon) ->
-    ExtTime = nkserver:get_plugin_config(SrvId, nkrpc9_server, ext_cmd_timeout),
+    ExtTime = nkserver:get_cached_config(SrvId, nkrpc9_server, ext_cmd_timeout),
     receive
         {'$gen_cast', {rpc9_reply_login, _UserId, Reply, TId, _StateFun}} ->
             nklib_util:demonitor(Mon),
@@ -342,12 +298,13 @@ send_msg_ok(Reply, CowReq) ->
 
 %% @private
 send_msg_error(SrvId, Error, CowReq) ->
-    {Code, Text} = nkserver_msg:msg(SrvId, Error),
+    Status = nkserver_status:status(SrvId, Error),
     Msg = #{
         result => error,
         data => #{
-            code => Code,
-            error => Text
+            code => maps:get(code, Status, 500),
+            error => maps:get(status, Status),
+            info => maps:get(info, Status, <<>>)
         }
     },
     send_http_reply(200, #{}, Msg, CowReq).

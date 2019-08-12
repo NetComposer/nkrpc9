@@ -246,8 +246,8 @@ conn_init(NkPort) ->
     SessId = <<"session-", (nklib_util:luid())/binary>>,
     true = nklib_proc:reg({?MODULE, session, SessId}, <<>>),
     pg2:join({nkrpc9_server, SrvId}, self()),
-    OpTime = nkserver:get_plugin_config(SrvId, nkrpc9_server, cmd_timeout),
-    ExtTime = nkserver:get_plugin_config(SrvId, nkrpc9_server, ext_cmd_timeout),
+    OpTime = nkserver:get_cached_config(SrvId, nkrpc9_server, cmd_timeout),
+    ExtTime = nkserver:get_cached_config(SrvId, nkrpc9_server, ext_cmd_timeout),
     {ok, UserState} = nkpacket:get_user_state(NkPort),
     State1 = #state{
         srv_id = SrvId,
@@ -570,6 +570,7 @@ make_req(TId, State) ->
         remote = Remote
     } = State,
     #{
+        class => ?MODULE,
         srv => SrvId,
         start => nklib_util:l_timestamp(),
         session_id => SessId,
@@ -590,7 +591,7 @@ process_login(UserId, Reply, TId, NkPort, State) ->
         session_id = SessId,
         user_state = UserState
     } = State,
-    PingTime = nkserver:get_plugin_config(SrvId, nkrpc9_server, ping_interval),
+    PingTime = nkserver:get_cached_config(SrvId, nkrpc9_server, ping_interval),
     nklib_proc:put({?MODULE, user, UserId}, {SessId, UserState}),
     nklib_proc:put({?MODULE, session, SessId}, UserId),
     start_ping(self(), PingTime),
@@ -705,13 +706,14 @@ send_reply_ok(Data, TId, NkPort, State) ->
 
 %% @private
 send_reply_error(Error, TId, NkPort, #state{srv_id=SrvId}=State) ->
-    {Code, Text} = nkserver_msg:msg(SrvId, Error),
+    Status = nkserver_status:status(SrvId, Error),
     Msg = #{
         result => error,
         tid => TId,
         data => #{
-            code => Code,
-            error => Text
+            code => maps:get(code, Status, 200),
+            error => maps:get(status, Status),
+            info => maps:get(info, Status, <<>>)
         }
     },
     send(Msg, NkPort, State).
@@ -761,7 +763,7 @@ print(Txt, Args, State) ->
 
 %% @private
 set_debug(#state{srv_id = SrvId}=State) ->
-    Debug = nkserver:get_plugin_config(SrvId, nkrpc9_server, debug),
+    Debug = nkserver:get_cached_config(SrvId, nkrpc9_server, debug),
     Protocol = lists:member(protocol, Debug),
     Msgs = lists:member(msgs, Debug),
     put(nkrpc9_protocol, Protocol),

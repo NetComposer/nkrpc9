@@ -39,7 +39,7 @@ plugin_deps() ->
 
 
 %% @doc
-plugin_config(SrvId, Config, #{class:=?PACKAGE_CLASS_RPC9_SRV}=Service) ->
+plugin_config(SrvId, Config, #{class:=nkrpc9_server}=Service) ->
     Syntax = #{
         url => binary,
         opts => nkpacket_syntax:safe_syntax(),
@@ -118,10 +118,10 @@ get_listen(SrvId, #{url:=Url}=Config, _Service) ->
             Debug = maps:get(debug, Config, []),
             Opts = ConfigOpts2#{
                 id => {nkrpc9_server, SrvId},
-                class => {?PACKAGE_CLASS_RPC9_SRV, SrvId},
+                class => {nkrpc9_server, SrvId},
                 debug => lists:member(nkpacket, Debug),
                 get_headers => [<<"user-agent">>],
-                user_state => maps:get(user_state, Config, undefined)
+                user_state => maps:get(user_state, Config, #{})
             },
             do_get_listen(Conns, Opts, []);
         {error, Error} ->

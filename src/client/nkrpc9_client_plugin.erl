@@ -39,7 +39,7 @@ plugin_deps() ->
 
 
 %% @doc
-plugin_config(_SrvId, Config, #{class:=?PACKAGE_CLASS_RPC9_CLIENT}) ->
+plugin_config(_SrvId, Config, #{class:=nkrpc9_client}) ->
     Syntax = #{
         url => binary,
         opts => nkpacket_syntax:safe_syntax(),
@@ -81,7 +81,7 @@ plugin_start(SrvId, #{url:=Url}=Config, Service) ->
     ConnOpts = ConfigOpts2#{
         protocol => nkrpc9_client_protocol,
         id => {nkrpc9_client, SrvId},
-        class => {?PACKAGE_CLASS_RPC9_CLIENT, SrvId},
+        class => {nkrpc9_client, SrvId},
         user_state => maps:get(user_state, Config),
         debug => lists:member(nkpacket, Debug)
     },

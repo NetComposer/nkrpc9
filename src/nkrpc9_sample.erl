@@ -22,7 +22,7 @@
 -module(nkrpc9_sample).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
--include_lib("nkserver/include/nkserver_module.hrl").
+-include_lib("nkserver/include/nkserver_callback.hrl").
 
 -export([start/0, stop/0]).
 -export([to_server/0, to_client/0, server_times/0, client_times/0, http/0]).
@@ -246,7 +246,7 @@ rpc9_allow(_Cmd, _Data, #{srv:=server, user_id:=UserId}, _State) when UserId /= 
     true;
 
 rpc9_allow(_Cmd, _Data, #{srv:=server}=Req, _State) ->
-    case nkrpc9_server_http:get_headers(Req) of
+    case nkrpc9_server:get_headers(Req) of
         #{<<"x-token">>:=<<"t1">>} ->
             true;
         _ ->

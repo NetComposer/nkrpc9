@@ -52,8 +52,6 @@ start(_Type, _Args) ->
             {ok, Pid} = nkrpc9_sup:start_link(),
             {ok, Vsn} = application:get_key(nkserver, vsn),
             lager:info("NkSERVER RPC9 v~s has started.", [Vsn]),
-            nkserver_util:register_package_class(?PACKAGE_CLASS_RPC9_SRV, nkrpc9_server),
-            nkserver_util:register_package_class(?PACKAGE_CLASS_RPC9_CLIENT, nkrpc9_client),
             {ok, Pid};
         {error, Error} ->
             lager:error("Error parsing config: ~p", [Error]),
