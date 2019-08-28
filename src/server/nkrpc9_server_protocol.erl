@@ -516,7 +516,7 @@ process_client_req(Cmd, Data, TId, NkPort, State) ->
     Req = make_req(TId, State),
     case nkrpc9_process:request(SrvId, Cmd, Data, Req, UserState) of
         {login, UserId2, Reply, UserState2} ->
-            State2 = apply_user_state(UserState, State),
+            State2 = apply_user_state(UserState2, State),
             case UserId == <<>> andalso UserId2 /= <<>> of
                 true ->
                     process_login(UserId2, Reply, TId, NkPort, State2);
