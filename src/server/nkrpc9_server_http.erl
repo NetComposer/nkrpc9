@@ -188,7 +188,9 @@ init(Method, Path, CowReq, NkPort) ->
                         end,
                         wait_ack(Req, Mon);
                     {error, Error, _State} ->
-                        send_msg_error(SrvId, Error, CowReq2)
+                        send_msg_error(SrvId, Error, CowReq2);
+                    {status, Status, _State} ->
+                        send_msg_status(SrvId, Status, CowReq2)
                 end;
             _ ->
                 case ?CALL_SRV(SrvId, rpc9_http, [Method, Path, Req]) of
@@ -297,17 +299,37 @@ send_msg_ok(Reply, CowReq) ->
 
 
 %% @private
-send_msg_error(SrvId, Error, CowReq) ->
-    Status = nkserver_status:status(SrvId, Error),
+send_msg_error(_SrvId, #{status:=Error}=Status, CowReq) ->
     Msg = #{
         result => error,
         data => #{
-            code => maps:get(code, Status, 500),
-            error => maps:get(status, Status),
+            error => Error,
+            code => maps:get(code, Status, 400),
             info => maps:get(info, Status, <<>>)
         }
     },
-    send_http_reply(200, #{}, Msg, CowReq).
+    send_http_reply(200, #{}, Msg, CowReq);
+
+send_msg_error(SrvId, Error, CowReq) ->
+    #{status:=_}=Status = nkserver_status:status(SrvId, Error),
+    send_msg_error(SrvId, Status, CowReq).
+
+
+%% @private
+send_msg_status(_SrvId, #{status:=Result}=Status, CowReq) ->
+    Msg = #{
+        result => ok,
+        data => #{
+            status => Result,
+            code => maps:get(code, Status, 200),
+            info => maps:get(info, Status, <<>>)
+        }
+    },
+    send_http_reply(200, #{}, Msg, CowReq);
+
+send_msg_status(SrvId, Error, CowReq) ->
+    #{status:=_}=Status = nkserver_status:status(SrvId, Error),
+    send_msg_error(SrvId, Status, CowReq).
 
 
 %% @private

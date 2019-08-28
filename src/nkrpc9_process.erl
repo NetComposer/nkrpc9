@@ -97,6 +97,10 @@ request_parse(SrvId, Cmd, Data, Req, State) ->
             request_allow(SrvId, Cmd, Data2, Req, State);
         {ok, Data2, State2} ->
             request_allow(SrvId, Cmd, Data2, Req, State2);
+        {status, Status} ->
+            {status, Status, State};
+        {status, Status, State2} ->
+            {status, Status, State2};
         {error, Error} ->
             {error, Error, State};
         {error, Error, State2} ->
@@ -159,6 +163,10 @@ request_process(SrvId, Cmd, Data, Req, State) ->
             {ack, Pid, State};
         {ack, Pid, State2} ->
             {ack, Pid, State2};
+        {status, Status} ->
+            {status, Status, State};
+        {status, Status, State2} ->
+            {status, Status, State2};
         {error, Error} ->
             {error, Error, State};
         {error, Error, State2} ->

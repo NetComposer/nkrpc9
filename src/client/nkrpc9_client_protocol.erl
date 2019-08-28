@@ -311,7 +311,7 @@ conn_handle_cast({rpc9_send_event, Event, Data}, NkPort, State) ->
 conn_handle_cast({rpc9_reply_ok, Reply, TId, StateFun}, NkPort, State) ->
     case extract_op(TId, State) of
         {#trans{op=ack}, State2} ->
-            State3 = apply_state_fun(StateFun, State2),
+            State3 = apply_user_state(StateFun, State2),
             send_reply_ok(Reply, TId, NkPort, State3);
         not_found ->
             ?LLOG(notice, "received user reply_ok for unknown req: ~p ~p",
@@ -319,10 +319,21 @@ conn_handle_cast({rpc9_reply_ok, Reply, TId, StateFun}, NkPort, State) ->
             {ok, State}
     end;
 
+conn_handle_cast({rpc9_reply_status, Status, TId, StateFun}, NkPort, State) ->
+    case extract_op(TId, State) of
+        {#trans{op=ack}, State2} ->
+            State3 = apply_user_state(StateFun, State2),
+            send_reply_status(Status, TId, NkPort, State3);
+        not_found ->
+            ?LLOG(notice, "received user reply_error for unknown req: ~p ~p",
+                [TId, State#state.trans], State),
+            {ok, State}
+    end;
+
 conn_handle_cast({rpc9_reply_error, Error, TId, StateFun}, NkPort, State) ->
     case extract_op(TId, State) of
         {#trans{op=ack}, State2} ->
-            State3 = apply_state_fun(StateFun, State2),
+            State3 = apply_user_state(StateFun, State2),
             send_reply_error(Error, TId, NkPort, State3);
         not_found ->
             ?LLOG(notice, "received user reply_error for unknown req: ~p ~p",
@@ -334,7 +345,7 @@ conn_handle_cast({rpc9_reply_ack, Pid, TId, Meta, StateFun}, NkPort, State) ->
     case extract_op(TId, State) of
         {#trans{op=ack}, State2} ->
             State3 = insert_ack(TId, Pid, State2),
-            State4 = apply_state_fun(StateFun, State3),
+            State4 = apply_user_state(StateFun, State3),
             send_ack(TId, Meta, NkPort, State4);
         not_found ->
             ?LLOG(notice, "received user reply_ack for unknown req", [], State),
@@ -408,12 +419,14 @@ process_server_req(Cmd, Data, TId, NkPort, State) ->
     Req = make_req(TId, State),
     case nkrpc9_process:request(SrvId, Cmd, Data, Req, UserState) of
         {reply, Reply, UserState2} ->
-            send_reply_ok(Reply, TId, NkPort, State#state{user_state=UserState2});
+            send_reply_ok(Reply, TId, NkPort, apply_user_state(UserState2, State));
         {ack, Pid, UserState2} ->
             State2 = insert_ack(TId, Pid, State),
-            send_ack(TId, #{}, NkPort, State2#state{user_state=UserState2});
+            send_ack(TId, #{}, NkPort, apply_user_state(UserState2, State2));
+        {status, Status, UserState2} ->
+            send_reply_status(Status, TId, NkPort, apply_user_state(UserState2, State));
         {error, Error, UserState2} ->
-            send_reply_error(Error, TId, NkPort, State#state{user_state=UserState2})
+            send_reply_error(Error, TId, NkPort, apply_user_state(UserState2, State))
     end.
 
 
@@ -582,18 +595,39 @@ send_reply_ok(Data, TId, NkPort, State) ->
 
 
 %% @private
-send_reply_error(Error, TId, NkPort, #state{srv_id=SrvId}=State) ->
-    Status = nkserver_status:status(SrvId, Error),
+send_reply_error(#{status:=Error}=Status, TId, NkPort, State) ->
     Msg = #{
         result => error,
         tid => TId,
         data => #{
-            code => maps:get(code, Status, 200),
-            error => maps:get(status, Status),
+            code => maps:get(code, Status, 500),
+            error => Error,
             info => maps:get(info, Status, <<>>)
         }
     },
-    send(Msg, NkPort, State).
+    send(Msg, NkPort, State);
+
+send_reply_error(Error, TId, NkPort, #state{srv_id=SrvId}=State) ->
+    #{status:=_} = Error2 = nkserver_status:status(SrvId, Error),
+    send_reply_error(Error2, TId, NkPort, State).
+
+
+%% @private
+send_reply_status(#{status:=Result}=Status, TId, NkPort, State) ->
+    Msg = #{
+        result => status,
+        tid => TId,
+        data => #{
+            code => maps:get(code, Status, 200),
+            status => Result,
+            info => maps:get(info, Status, <<>>)
+        }
+    },
+    send(Msg, NkPort, State);
+
+send_reply_status(Error, TId, NkPort, #state{srv_id=SrvId}=State) ->
+    #{status:=_} = Error2 = nkserver_status:status(SrvId, Error),
+    send_reply_status(Error2, TId, NkPort, State).
 
 
 %% @private
@@ -679,8 +713,11 @@ handle(Fun, Args, NkPort, #state{srv_id=SrvId, user_state=UserState}=State) ->
 
 
 %% @private
-apply_state_fun(undefined, State) ->
+apply_user_state(undefined, State) ->
     State;
 
-apply_state_fun(Fun, #state{user_state=UserState}=State) ->
+apply_user_state(Map, State) when is_map(Map)->
+    State#state{user_state = Map};
+
+apply_user_state(Fun, #state{user_state=UserState}=State) when is_function(Fun, 1) ->
     State#state{user_state = Fun(UserState)}.

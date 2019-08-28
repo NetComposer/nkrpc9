@@ -83,7 +83,8 @@ msg(_)   		           -> continue.
 
 %% @doc Called for each request, to check its syntax
 -spec rpc9_parse(cmd(), data(), request(), state()) -> 
-    {ok, data(), state()} | {syntax, nklib_syntax:syntax(), state()} | {error, term()}.
+    {ok, data(), state()} | {syntax, nklib_syntax:syntax(), state()} |
+    {status, nkserver:status(), state()} |{error, nkserver:status(), state()}.
     
 rpc9_parse(_Cmd, Data, _Req, State) ->
     {ok, Data, State}.
@@ -102,7 +103,7 @@ rpc9_allow(_Cmd, _Data, _Req, _State) ->
     {login, UserId::binary(), data(), state()} |
     {reply, data(), state()} |
     {ack, pid()|undefined, state()} |
-    {error, nkserver:status(), state()}.
+    {status, nkserver:status(), state()} |{error, nkserver:status(), state()}.
 
 rpc9_request(_Cmd, _Data, _Req, State) ->
     {error, not_implemented, State}.
