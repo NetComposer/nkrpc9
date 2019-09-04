@@ -190,7 +190,9 @@ init(Method, Path, CowReq, NkPort) ->
                     {error, Error, _State} ->
                         send_msg_error(SrvId, Error, CowReq2);
                     {status, Status, _State} ->
-                        send_msg_status(SrvId, Status, CowReq2)
+                        send_msg_status(SrvId, Status, CowReq2);
+                    {stop, _Reason, Reply, _State} ->
+                        send_msg_ok(Reply, CowReq2)
                 end;
             _ ->
                 case ?CALL_SRV(SrvId, rpc9_http, [Method, Path, Req]) of

@@ -426,7 +426,10 @@ process_server_req(Cmd, Data, TId, NkPort, State) ->
         {status, Status, UserState2} ->
             send_reply_status(Status, TId, NkPort, apply_user_state(UserState2, State));
         {error, Error, UserState2} ->
-            send_reply_error(Error, TId, NkPort, apply_user_state(UserState2, State))
+            send_reply_error(Error, TId, NkPort, apply_user_state(UserState2, State));
+        {stop, _Reason, Reply, UserState2} ->
+            stop(self()),
+            send_reply_ok(Reply, TId, NkPort, apply_user_state(UserState2, State))
     end.
 
 
@@ -437,7 +440,9 @@ process_server_event(Event, Data, #state{srv_id=SrvId, user_state=UserState}=Sta
         {ok, UserState2} ->
             {ok, State#state{user_state=UserState2}};
         {error, _Error, UserState2} ->
-            {ok, State#state{user_state=UserState2}}
+            {ok, State#state{user_state=UserState2}};
+        {stop, _Reason, UserState2} ->
+            {stop, normal, apply_user_state(UserState2, State)}
     end.
 
 

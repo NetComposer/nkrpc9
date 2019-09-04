@@ -104,7 +104,11 @@ request_parse(SrvId, Cmd, Data, Req, State) ->
         {error, Error} ->
             {error, Error, State};
         {error, Error, State2} ->
-            {error, Error, State2}
+            {error, Error, State2};
+        {stop, Reason, Reply} ->
+            {stop, Reason, Reply, State};
+        {stop, Reason, Reply, State2} ->
+            {stop, Reason, Reply, State2}
     end.
 
 
@@ -170,7 +174,11 @@ request_process(SrvId, Cmd, Data, Req, State) ->
         {error, Error} ->
             {error, Error, State};
         {error, Error, State2} ->
-            {error, Error, State2}
+            {error, Error, State2};
+        {stop, Reason, Reply} ->
+            {stop, Reason, Reply, State};
+        {stop, Reason, Reply, State2} ->
+            {stop, Reason, Reply, State2}
     end.
 
 
@@ -198,7 +206,11 @@ event_parse(SrvId, Event, Data, Req, State) ->
         {error, Error} ->
             {error, Error, State};
         {error, Error, State2} ->
-            {error, Error, State2}
+            {error, Error, State2};
+        {stop, Reason} ->
+            {stop, Reason, State};
+        {stop, Reason, State2} ->
+            {stop, Reason, State2}
     end.
 
 
@@ -212,5 +224,9 @@ event_process(SrvId, Event, Data, Req, State) ->
         {error, Error} ->
             {error, Error};
         {error, Error, State2} ->
-            {error, Error, State2}
+            {error, Error, State2};
+        {stop, Reason} ->
+            {stop, Reason, State};
+        {stop, Reason, State2} ->
+            {stop, Reason, State2}
     end.
