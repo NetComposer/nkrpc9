@@ -179,8 +179,8 @@ transports(_) -> [wss, ws].
 -spec default_port(nkpacket:transport()) ->
     inet:port_number() | invalid.
 
-default_port(ws) -> 9010;
-default_port(wss) -> 9011.
+default_port(ws) -> 80;
+default_port(wss) -> 443.
 
 
 %% ===================================================================
@@ -375,7 +375,7 @@ conn_handle_cast(Msg, NkPort, State) ->
 conn_handle_info({timeout, _, {rpc9_op_timeout, TId}}, _NkPort, State) ->
     case extract_op(TId, State) of
         {#trans{op=Op, from=From}, State2} ->
-            Msg = #{<<"code">> => <<"timeout">>, <<"error">> => <<"Opertion timeout">>},
+            Msg = #{<<"code">> => <<"timeout">>, <<"error">> => <<"Operation timeout">>},
             nklib_util:reply(From, {ok, <<"error">>, Msg}),
             ?LLOG(notice, "operation ~p (~p) timeout!", [Op, TId], State),
             {stop, normal, State2};

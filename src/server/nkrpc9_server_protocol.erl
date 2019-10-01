@@ -459,7 +459,7 @@ conn_handle_info(rpc9_send_ping, NkPort, #state{ping=Time}=State) ->
 conn_handle_info({timeout, _, {rpc9_op_timeout, TId}}, _NkPort, State) ->
     case extract_op(TId, State) of
         {#trans{op=Op, from=From}, State2} ->
-            Msg = #{<<"code">> => <<"timeout">>, <<"error">> => <<"Opertion timeout">>},
+            Msg = #{<<"code">> => <<"timeout">>, <<"error">> => <<"Operation timeout">>},
             nklib_util:reply(From, {ok, <<"error">>, Msg}),
             ?LLOG(notice, "operation ~p (~p) timeout!", [Op, TId], State),
             {stop, normal, State2};
