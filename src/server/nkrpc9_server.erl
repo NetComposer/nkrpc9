@@ -24,7 +24,7 @@
 -export([start_link/2, get_sup_spec/2]).
 -export([stop/1, update/2]).
 -export([send_request/3, send_async_request/3, send_event/3, reply/2, reply/3]).
--export([is_http/1, get_headers/1, get_qs/1, get_basic_auth/1, get_ct/1]).
+-export([is_http/1, get_headers/1, get_qs/1, get_basic_auth/1, get_ct/1, get_peer/1]).
 -export_type([id/0, cmd/0, event/0, data/0, request/0, reply/0, async_reply/0]).
 
 -include("nkrpc9.hrl").
@@ -180,7 +180,10 @@ get_headers(_) ->
     nkrpc9_server_http:http_qs().
 
 get_qs(#{'_cowreq':=CowReq}) ->
-    cowboy_req:parse_qs(CowReq).
+    cowboy_req:parse_qs(CowReq);
+
+get_qs(_) ->
+    [].
 
 
 %% @doc
@@ -193,11 +196,33 @@ get_basic_auth(#{'_cowreq':=CowReq}) ->
             {ok, User, Pass};
         _ ->
             undefined
-    end.
+    end;
+
+get_basic_auth(_) ->
+    undefined.
+
 
 %% @doc
 -spec get_ct(request()) ->
     {binary(), binary(), list()}.
 
 get_ct(#{'_cowreq':=CowReq}) ->
-    cowboy_req:parse_header(<<"content-type">>, CowReq).
+    cowboy_req:parse_header(<<"content-type">>, CowReq);
+
+get_ct(_) ->
+    {<<>>, <<>>, []}.
+
+
+
+%% @doc
+-spec get_peer(request()) ->
+    {inet:ip_address(), inet:port_number()}.
+
+get_peer(#{'_cowreq':=CowReq}) ->
+    cowboy_req:peer(CowReq);
+
+get_peer(_) ->
+    {{0,0,0,0}, 0}.
+
+
+
