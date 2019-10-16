@@ -25,17 +25,8 @@
 -export_type([method/0, reply/0, code/0, headers/0, body/0, req/0, path/0, http_qs/0]).
 
 
--define(DEBUG(Txt, Args, State),
-    case erlang:get(nkrpc9_debug) of
-        true -> ?LLOG(debug, Txt, Args, State);
-        _ -> ok
-    end).
-
--define(LLOG(Type, Txt, Args, Req),
-    lager:Type("NkSERVER RPC9 HTTP (~s, ~s) "++Txt,
-               [maps:get(srv, Req), maps:get(remote, Req)|Args])).
-
 -include_lib("nkserver/include/nkserver.hrl").
+-include_lib("nkserver/include/nkserver_trace.hrl").
 -include_lib("nkpacket/include/nkpacket.hrl").
 -include("nkrpc9.hrl").
 
@@ -143,15 +134,38 @@ stream_stop(#{'_cowreq':=CowReq}) ->
 %% @private
 %% Called from middle9_server_protocol:http_init/5
 init(Method, Path, CowReq, NkPort) ->
+    SpanName = list_to_binary([<<"NkRPC9 ">>, Method, <<" ">>, Path]),
+    {Ip, Port} = cowboy_req:peer(CowReq),
+    Peer = <<
+        (nklib_util:to_host(Ip))/binary, ":",
+        (to_bin(Port))/binary
+    >>,
+    {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
+    Opts = #{
+        base_txt => "NkREST RPC9 (~s, ~s)",
+        base_args => [SrvId, Peer],
+        base_audit => #{group => nkrpc9}
+    },
+    nkserver_trace:start(SrvId, ?MODULE, SpanName,
+        fun() -> do_init(SrvId, Method, Peer, Path, CowReq, NkPort) end, Opts).
+
+
+%% @private
+do_init(SrvId, Method, Peer, Path, CowReq, NkPort) ->
     Local = nkpacket:get_local_bin(NkPort),
     {Ip, Port} = cowboy_req:peer(CowReq),
     Remote = <<
         (nklib_util:to_host(Ip))/binary, ":",
         (to_bin(Port))/binary
     >>,
-    {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
-    set_debug(SrvId),
     SessionId = nklib_util:luid(),
+    CT = cowboy_req:header(<<"content-type">>, CowReq),
+    ?TAGS(#{
+        <<"method">> => Method,
+        <<"path">> => Path,
+        <<"peer">> => Peer,
+        <<"content_type">> => CT
+    }),
     Req = #{
         class => ?MODULE,
         srv => SrvId,
@@ -163,17 +177,20 @@ init(Method, Path, CowReq, NkPort) ->
         tid => erlang:phash2(SessionId),
         timeout_pending => false,
         debug => get(nkrpc9_debug),
+        ot_span_id => ?MODULE,
         '_cowreq' => CowReq
     },
     try
         case Method of
             <<"POST">> when Path == [] ->
+                ?INFO("received request (~s) from ~s", [Path, Peer]),
                 {ok, Cmd, Data, CowReq2} = get_cmd_body(SrvId, CowReq),
                 Req2 = Req#{
                     cmd => Cmd,
                     data => Data,
                     '_cowreq' := CowReq2
                 },
+                ?INFO("received cmd '~s' from ~s", [Cmd, Peer]),
                 case nkrpc9_process:request(SrvId, Cmd, Data, Req2, #{}) of
                     {login, _UserId, Reply, _State} ->
                         send_msg_ok(Reply, CowReq2);
@@ -195,11 +212,13 @@ init(Method, Path, CowReq, NkPort) ->
                         send_msg_ok(Reply, CowReq2)
                 end;
             _ ->
+                ?INFO("received '~s' (~s) from ~s", [Method, Path, Peer]),
                 case ?CALL_SRV(SrvId, rpc9_http, [Method, Path, Req]) of
                     {http, Code, RHds, RBody, #{'_cowreq':=CowReq3}} ->
+                        ?INFO("send HTTP response: ~p", [Code]),
                         send_http_reply(Code, RHds, RBody, CowReq3);
                     {stop, #{'_cowreq':=CowReq3}} ->
-                        ?DEBUG("replying stream stop", [], Req),
+                        ?DEBUG("replying stream stop", []),
                         {ok, CowReq3, []};
                     {redirect, Path} ->
                         {redirect, Path};
@@ -212,7 +231,6 @@ init(Method, Path, CowReq, NkPort) ->
             send_http_reply(TCode, THds, TReply, CowReq)
     end.
 
-
 %% @private
 terminate(_Reason, _Req, _Opts) ->
     ok.
@@ -221,12 +239,6 @@ terminate(_Reason, _Req, _Opts) ->
 %% ===================================================================
 %% Internal
 %% ===================================================================
-
-%% @private
-set_debug(SrvId) ->
-    Debug = nkserver:get_cached_config(SrvId, nkrpc9_server, debug),
-    Http = lists:member(protocol, Debug),
-    put(nkrpc9_debug, Http).
 
 
 %% @private
@@ -280,7 +292,7 @@ wait_ack(#{srv:=SrvId, tid:=TId, '_cowreq':=CowReq}=Req, Mon) ->
         {'$gen_cast', rpc9_stop} ->
             ok;
         Other ->
-            ?LLOG(warning, "unexpected msg in wait_ack: ~p", [Other], Req),
+            ?WARNING("unexpected msg in wait_ack: ~p", [Other]),
             wait_ack(Req, Mon)
     after
         ExtTime ->
@@ -297,6 +309,7 @@ send_msg_ok(Reply, CowReq) ->
         #{} -> Msg1#{data=>Reply};
         List when is_list(List) -> Msg1#{data=>Reply}
     end,
+    ?INFO("successful response: ~p", [Msg2]),
     send_http_reply(200, #{}, Msg2, CowReq).
 
 
@@ -310,6 +323,7 @@ send_msg_error(_SrvId, #{status:=Error}=Status, CowReq) ->
             info => maps:get(info, Status, <<>>)
         }
     },
+    ?INFO("error response: ~p", [Msg]),
     send_http_reply(200, #{}, Msg, CowReq);
 
 send_msg_error(SrvId, Error, CowReq) ->
@@ -327,6 +341,7 @@ send_msg_status(_SrvId, #{status:=Result}=Status, CowReq) ->
             info => maps:get(info, Status, <<>>)
         }
     },
+    ?INFO("status response: ~p", [Msg]),
     send_http_reply(200, #{}, Msg, CowReq);
 
 send_msg_status(SrvId, Error, CowReq) ->
