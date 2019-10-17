@@ -320,7 +320,8 @@ send_msg_error(_SrvId, #{status:=Error}=Status, CowReq) ->
         data => #{
             error => Error,
             code => maps:get(code, Status, 400),
-            info => maps:get(info, Status, <<>>)
+            info => maps:get(info, Status, <<>>),
+            data => maps:get(data, Status, #{})
         }
     },
     ?INFO("error response: ~p", [Msg]),
@@ -338,7 +339,8 @@ send_msg_status(_SrvId, #{status:=Result}=Status, CowReq) ->
         data => #{
             status => Result,
             code => maps:get(code, Status, 200),
-            info => maps:get(info, Status, <<>>)
+            info => maps:get(info, Status, <<>>),
+            data => maps:get(data, Status, #{})
         }
     },
     ?INFO("status response: ~p", [Msg]),

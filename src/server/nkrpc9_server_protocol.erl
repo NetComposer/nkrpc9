@@ -732,7 +732,8 @@ send_reply_error(#{status:=Error}=Status, TId, NkPort, State) ->
         data => #{
             code => maps:get(code, Status, 400),
             error => Error,
-            info => maps:get(info, Status, <<>>)
+            info => maps:get(info, Status, <<>>),
+            data => maps:get(data, Status, #{})
         }
     },
     send(Msg, NkPort, State);
@@ -750,7 +751,8 @@ send_reply_status(#{status:=Result}=Status, TId, NkPort, State) ->
         data => #{
             code => maps:get(code, Status, 200),
             status => Result,
-            info => maps:get(info, Status, <<>>)
+            info => maps:get(info, Status, <<>>),
+            data => maps:get(data, Status, #{})
         }
     },
     send(Msg, NkPort, State);
