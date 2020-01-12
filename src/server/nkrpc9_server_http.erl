@@ -141,13 +141,12 @@ init(Method, Path, CowReq, NkPort) ->
         (to_bin(Port))/binary
     >>,
     {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
-    Opts = #{
+    _Opts = #{
         base_txt => "NkREST RPC9 (~s, ~s)",
         base_args => [SrvId, Peer],
         base_audit => #{group => nkrpc9}
     },
-    nkserver_trace:start(SrvId, ?MODULE, SpanName,
-        fun() -> do_init(SrvId, Method, Peer, Path, CowReq, NkPort) end, Opts).
+    do_init(SrvId, Method, Peer, Path, CowReq, NkPort).
 
 
 %% @private
@@ -160,12 +159,12 @@ do_init(SrvId, Method, Peer, Path, CowReq, NkPort) ->
     >>,
     SessionId = nklib_util:luid(),
     CT = cowboy_req:header(<<"content-type">>, CowReq),
-    ?TAGS(#{
-        <<"method">> => Method,
-        <<"path">> => Path,
-        <<"peer">> => Peer,
-        <<"content_type">> => CT
-    }),
+%%    ?TAGS(#{
+%%        <<"method">> => Method,
+%%        <<"path">> => Path,
+%%        <<"peer">> => Peer,
+%%        <<"content_type">> => CT
+%%    }),
     Req = #{
         class => ?MODULE,
         srv => SrvId,
@@ -183,14 +182,14 @@ do_init(SrvId, Method, Peer, Path, CowReq, NkPort) ->
     try
         case Method of
             <<"POST">> when Path == [] ->
-                ?INFO("received request (~s) from ~s", [Path, Peer]),
+%%                ?INFO("received request (~s) from ~s", [Path, Peer]),
                 {ok, Cmd, Data, CowReq2} = get_cmd_body(SrvId, CowReq),
                 Req2 = Req#{
                     cmd => Cmd,
                     data => Data,
                     '_cowreq' := CowReq2
                 },
-                ?INFO("received cmd '~s' from ~s", [Cmd, Peer]),
+%%                ?INFO("received cmd '~s' from ~s", [Cmd, Peer]),
                 case nkrpc9_process:request(SrvId, Cmd, Data, Req2, #{}) of
                     {login, _UserId, Reply, _State} ->
                         send_msg_ok(Reply, CowReq2);
@@ -212,13 +211,13 @@ do_init(SrvId, Method, Peer, Path, CowReq, NkPort) ->
                         send_msg_ok(Reply, CowReq2)
                 end;
             _ ->
-                ?INFO("received '~s' (~s) from ~s", [Method, Path, Peer]),
+%%                ?INFO("received '~s' (~s) from ~s", [Method, Path, Peer]),
                 case ?CALL_SRV(SrvId, rpc9_http, [Method, Path, Req]) of
                     {http, Code, RHds, RBody, #{'_cowreq':=CowReq3}} ->
-                        ?INFO("send HTTP response: ~p", [Code]),
+%%                        ?INFO("send HTTP response: ~p", [Code]),
                         send_http_reply(Code, RHds, RBody, CowReq3);
                     {stop, #{'_cowreq':=CowReq3}} ->
-                        ?DEBUG("replying stream stop", []),
+%%                        ?DEBUG("replying stream stop", []),
                         {ok, CowReq3, []};
                     {redirect, Path} ->
                         {redirect, Path};
@@ -292,7 +291,7 @@ wait_ack(#{srv:=SrvId, tid:=TId, '_cowreq':=CowReq}=Req, Mon) ->
         {'$gen_cast', rpc9_stop} ->
             ok;
         Other ->
-            ?WARNING("unexpected msg in wait_ack: ~p", [Other]),
+%%            ?WARNING("unexpected msg in wait_ack: ~p", [Other]),
             wait_ack(Req, Mon)
     after
         ExtTime ->
@@ -309,7 +308,7 @@ send_msg_ok(Reply, CowReq) ->
         #{} -> Msg1#{data=>Reply};
         List when is_list(List) -> Msg1#{data=>Reply}
     end,
-    ?INFO("successful response: ~p", [Msg2]),
+%%    ?INFO("successful response: ~p", [Msg2]),
     send_http_reply(200, #{}, Msg2, CowReq).
 
 
@@ -324,7 +323,7 @@ send_msg_error(_SrvId, #{status:=Error}=Status, CowReq) ->
             data => maps:get(data, Status, #{})
         }
     },
-    ?INFO("error response: ~p", [Msg]),
+%%    ?INFO("error response: ~p", [Msg]),
     send_http_reply(200, #{}, Msg, CowReq);
 
 send_msg_error(SrvId, Error, CowReq) ->
@@ -343,7 +342,7 @@ send_msg_status(_SrvId, #{status:=Result}=Status, CowReq) ->
             data => maps:get(data, Status, #{})
         }
     },
-    ?INFO("status response: ~p", [Msg]),
+%%    ?INFO("status response: ~p", [Msg]),
     send_http_reply(200, #{}, Msg, CowReq);
 
 send_msg_status(SrvId, Error, CowReq) ->
