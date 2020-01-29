@@ -181,6 +181,16 @@ rpc9_terminate(_Reason, State) ->
     {cowboy_static, cowboy_static:opts()} |
     {cowboy_rest, Callback::module(), State::term()}.
 
+%%rpc9_http(<<"OPTIONS">>, [<<>>], #{'_cowreq':=CowReq, srv:=_SrvId}=Req) ->
+%%    {ok, Body, CowReq2} = cowboy_req:read_body(CowReq, #{length=>infinity}),
+%%    lager:notice("OPTIONS: ~p", [Body]),
+%%    {http, 404, #{}, <<>>, Req#{'_cowreq':=CowReq2}};
+%%
+%%rpc9_http(<<"POST">>, [<<>>], #{'_cowreq':=CowReq, srv:=_SrvId}=Req) ->
+%%    {ok, Body, CowReq2} = cowboy_req:read_body(CowReq, #{length=>infinity}),
+%%    lager:notice("POST: ~p", [Body]),
+%%    {http, 404, #{}, <<>>, Req#{'_cowreq':=CowReq2}};
+
 rpc9_http(Method, Path, #{srv:=SrvId}=Req) ->
     #{remote:=Remote} = Req,
     ?LLOG(debug, "path not found (~p, ~s): ~p from ~s", [SrvId, Method, Path, Remote]),

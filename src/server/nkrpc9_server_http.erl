@@ -181,7 +181,7 @@ do_init(SrvId, Method, Peer, Path, CowReq, NkPort) ->
     },
     try
         case Method of
-            <<"POST">> when Path == [] ->
+            <<"POST">> when (Path == [] orelse Path == [<<>>]) ->
 %%                ?INFO("received request (~s) from ~s", [Path, Peer]),
                 {ok, Cmd, Data, CowReq2} = get_cmd_body(SrvId, CowReq),
                 Req2 = Req#{
