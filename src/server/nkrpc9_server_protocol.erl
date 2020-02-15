@@ -32,6 +32,7 @@
 -export([conn_init/1, conn_encode/2, conn_parse/3, conn_handle_call/4,
          conn_handle_cast/3, conn_handle_info/3, conn_stop/3]).
 -export([http_init/4]).
+-import(nkserver_trace, [trace/1, trace/2, log/3]).
 
 -define(DEBUG(Txt, Args, State),
     case erlang:get(nkrpc9_protocol) of
@@ -237,11 +238,6 @@ resolve_opts() ->
     {ok, #state{}}.
 
 conn_init(NkPort) ->
-%%    Self = self(),
-%%    spawn(
-%%        fun() ->
-%%            lager:error("NKLOG TIME ~p", [nkpacket_connection:get_timeout(Self)])
-%%        end),
     {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
     {ok, Local} = nkpacket:get_local_bin(NkPort),
     {ok, Remote} = nkpacket:get_remote_bin(NkPort),
@@ -263,8 +259,17 @@ conn_init(NkPort) ->
     },
     set_debug(State1),
     Idle = maps:get(idle_timeout, Opts),
-    ?LLOG(info, "new connection (~s, ~p) (Idle:~p)", [Remote, self(), Idle], State1),
+    nkserver_trace:new_span(SrvId, {nkrpc9_server, new_connection}, infinity),
+    Tags = #{
+        srv => SrvId,
+        session_id => SessId,
+        local => Local,
+        remote => Remote
+    },
+    nkserver_trace:tags(Tags),
+    log(info, "new connection (~s, ~p) (Idle:~p)", [Remote, self(), Idle]),
     {ok, State2} = handle(rpc9_init, [SrvId, NkPort], NkPort, State1),
+    trace("connection initialized"),
     {ok, State2}.
 
 
@@ -273,19 +278,20 @@ conn_init(NkPort) ->
     {ok, #state{}} | {stop, term(), #state{}}.
 
 conn_parse(close, _NkPort, State) ->
+    trace("connection closed"),
     {ok, State};
 
 conn_parse({text, Text}, NkPort, State) ->
     Msg = nklib_json:decode(Text),
     case Msg of
         #{<<"cmd">> := Cmd, <<"tid">> := TId} ->
-            ?MSG("received ~s", [Msg], State),
+            log(debug, "cmd recreceived ~s", [Msg]),
             Cmd2 = get_cmd(Cmd, Msg),
             Data = maps:get(<<"data">>, Msg, #{}),
             process_client_req(Cmd2, Data, TId, NkPort, State);
         #{<<"event">> := Event} ->
             Data = maps:get(<<"data">>, Msg, #{}),
-            ?MSG("received event ~s", [Event], State),
+            log(debug, "event received ~s", [Msg]),
             process_client_event(Event, Data, State);
         #{<<"result">> := Result, <<"tid">> := TId} when is_binary(Result) ->
             case extract_op(TId, State) of
@@ -294,33 +300,31 @@ conn_parse({text, Text}, NkPort, State) ->
                         #trans{op=#{cmd:=<<"ping">>}} ->
                             ok;
                         _ ->
-                            ?MSG("received ~s", [Msg], State)
+                            log(debug, "result received ~s", [Msg])
                     end,
                     Data = maps:get(<<"data">>, Msg, #{}),
                     process_client_resp(Trans, Result, Data, State2);
                 not_found ->
-                    ?LLOG(info,
-                        "received client response for unknown req: ~p, ~p, ~p",
-                        [Msg, TId, State#state.trans], State),
+                    log(info, "received client response for unknown req: ~p, ~p, ~p",
+                        [Msg, TId, State#state.trans]),
                     {ok, State}
             end;
         #{<<"ack">> := TId} ->
-            ?MSG("received ~s", [Msg], State),
+            log(debug, "ack received ~s", [Msg]),
             case extract_op(TId, State) of
                 {Trans, State2} ->
                     {ok, extend_op(TId, Trans, State2)};
                 not_found ->
-                    ?LLOG(info, "received client ack for unknown req: ~p ",
-                        [Msg], State),
+                    log(info, "received client ack for unknown req: ~p ", [Msg]),
                     {ok, State}
             end;
         _ ->
-            ?LLOG(notice, "received unrecognized msg: ~p", [Msg], State),
+            log(notice, "received unrecognized msg: ~p", [Msg]),
             {stop, normal, State}
     end;
 
-conn_parse({binary, _Bin}, _NkPort, State) ->
-    ?LLOG(warning, "received binary frame", [], State),
+conn_parse({binary, _Bin}, _NkPort, _State) ->
+    log(warning, "received binary frame", []),
     error(binary_frame).
 
 
@@ -330,7 +334,7 @@ conn_parse({binary, _Bin}, _NkPort, State) ->
 conn_encode(Msg, _NkPort) when is_map(Msg); is_list(Msg) ->
     case nklib_json:encode(Msg) of
         error ->
-            lager:warning("invalid json in ~p: ~p", [?MODULE, Msg]),
+            log(warning, "invalid json in ~p: ~p", [?MODULE, Msg]),
             {error, invalid_json};
         Json ->
             {ok, {text, Json}}
