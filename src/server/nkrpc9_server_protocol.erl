@@ -189,12 +189,6 @@ find_session(SessId) ->
     from :: {pid(), term()} | {async, pid(), term()}
 }).
 
-%%-record(reg, {
-%%    event :: term(),
-%%    index :: integer(),
-%%    mon :: reference()
-%%}).
-
 -record(state, {
     srv_id :: nkservice:id(),
     session_id :: nkservice:session_id(),
@@ -259,14 +253,13 @@ conn_init(NkPort) ->
     },
     set_debug(State1),
     Idle = maps:get(idle_timeout, Opts),
-    nkserver_trace:new_span(SrvId, {nkrpc9_server, new_connection}, infinity),
-    Tags = #{
-        srv => SrvId,
+    SpanOpts = #{
+        app => SrvId,
         session_id => SessId,
         local => Local,
         remote => Remote
     },
-    nkserver_trace:tags(Tags),
+    nkserver_trace:new_span(SrvId, {nkrpc9_server, connection}, infinity, SpanOpts),
     log(info, "new connection (~s, ~p) (Idle:~p)", [Remote, self(), Idle]),
     {ok, State2} = handle(rpc9_init, [SrvId, NkPort], NkPort, State1),
     trace("connection initialized"),
@@ -494,7 +487,8 @@ conn_handle_info(Info, NkPort, State) ->
     ok.
 
 conn_stop(Reason, NkPort, State) ->
-    catch handle(rpc9_terminate, [Reason], NkPort, State).
+    catch handle(rpc9_terminate, [Reason], NkPort, State),
+    nkserver_trace:finish_span().
 
 
 %% ===================================================================

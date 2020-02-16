@@ -22,30 +22,9 @@
 -module(nkrpc9_process).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([request/5, event/5, result/6]).
+-import(nkserver_trace, [trace/1, trace/2]).
+
 -include_lib("nkserver/include/nkserver.hrl").
-
-
--define(DEBUG(Txt, Args, State),
-    case erlang:get(nkrpc9_debug) of
-        true -> ?LLOG(debug, Txt, Args, State);
-        _ -> ok
-    end).
-
--define(LLOG(Type, Txt, Args, Req),
-    lager:Type(
-        [
-            {session_id, maps:get(session_id, Req)},
-            {srv_id, maps:get(srv, Req)},
-            {user_id, maps:get(user_id, Req, <<>>)}
-        ],
-        "RPC9 Server ~s (~s) (~s) "++Txt,
-        [
-            maps:get(session_id, Req),
-            maps:get(srv, Req),
-            maps:get(user_id, Req, <<>>)
-            | Args
-        ])).
-
 
 %% @doc
 request(SrvId, Cmd, Data, Req, State) ->
@@ -59,6 +38,7 @@ event(SrvId, Event, Data, Req, State) ->
 
 %% @doc
 result(SrvId, Result, Data, Op, From, State) ->
+    trace("result: ~p", [Result]),
     case ?CALL_SRV(SrvId, rpc9_result, [Result, Data, Op, From, State]) of
         {reply, _Result2, _Data2, State2} when From==undefined ->
             {ok, State2};
@@ -72,6 +52,7 @@ result(SrvId, Result, Data, Op, From, State) ->
 
 %% @private
 request_parse(SrvId, Cmd, Data, Req, State) ->
+    trace("parsing request"),
     case ?CALL_SRV(SrvId, rpc9_parse, [Cmd, Data, Req, State]) of
         {syntax, Syntax} ->
             case nklib_syntax:parse(Data, Syntax) of
@@ -98,92 +79,89 @@ request_parse(SrvId, Cmd, Data, Req, State) ->
         {ok, Data2, State2} ->
             request_allow(SrvId, Cmd, Data2, Req, State2);
         {status, Status} ->
+            trace("processed status: ~p", [Status]),
             {status, Status, State};
         {status, Status, State2} ->
+            trace("processed status: ~p", [Status]),
             {status, Status, State2};
         {error, Error} ->
+            trace("processed error: ~p", [Error]),
             {error, Error, State};
         {error, Error, State2} ->
+            trace("processed error: ~p", [Error]),
             {error, Error, State2};
         {stop, Reason, Reply} ->
+            trace("processed stop: ~p ~p", [Reason, Reply]),
             {stop, Reason, Reply, State};
         {stop, Reason, Reply, State2} ->
+            trace("processed stop: ~p ~p", [Reason, Reply]),
             {stop, Reason, Reply, State2}
     end.
 
 
 %% @private
 request_allow(SrvId, Cmd, Data, Req, State) ->
+    trace("allowing request"),
     case ?CALL_SRV(SrvId, rpc9_allow, [Cmd, Data, Req, State]) of
         true ->
             request_process(SrvId, Cmd, Data, Req, State);
         {true, State2} ->
             request_process(SrvId, Cmd, Data, Req, State2);
         false ->
-            ?DEBUG("request NOT allowed", [], Req),
+            trace("request NOT allowed"),
             {error, unauthorized, State}
     end.
 
 
 %% @private
 request_process(SrvId, Cmd, Data, Req, State) ->
-    ?DEBUG("request allowed", [], Req),
+    trace("request allowed"),
     case ?CALL_SRV(SrvId, rpc9_request, [Cmd, Data, Req, State]) of
         {login, UserId, Reply} ->
-            Reply2 = case maps:find(unknown_fields, Req) of
-                {ok, Fields} ->
-                    Reply#{unknown_fields=>Fields};
-                error ->
-                    Reply
-            end,
-            {login, UserId, Reply2, State};
+            trace("processed login: ~s ~p", [UserId, Reply]),
+            {login, UserId, check_unknown(Reply, Req), State};
         {login, UserId, Reply, State2} ->
-            Reply2 = case maps:find(unknown_fields, Req) of
-                {ok, Fields} ->
-                    Reply#{unknown_fields=>Fields};
-                error ->
-                    Reply
-            end,
-            {login, UserId, Reply2, State2};
+            trace("processed login: ~s ~p", [UserId, Reply]),
+            {login, UserId, check_unknown(Reply, Req), State2};
         {reply, Reply, State2} ->
-            Reply2 = case maps:find(unknown_fields, Req) of
-                {ok, Fields} ->
-                    Reply#{unknown_fields=>Fields};
-                error ->
-                    Reply
-            end,
-            {reply, Reply2, State2};
+            trace("processed reply: ~p", [Reply]),
+            {reply, check_unknown(Reply, Req), State2};
         {reply, Reply} ->
-            Reply2 = case maps:find(unknown_fields, Req) of
-                {ok, Fields} ->
-                    Reply#{unknown_fields=>Fields};
-                error ->
-                    Reply
-            end,
-            {reply, Reply2, State};
+            trace("processed reply: ~p", [Reply]),
+            {reply, check_unknown(Reply, Req), State};
         ack ->
+            trace("processed ack"),
             {ack, undefined, State};
         {ack, Pid} ->
+            trace("processed ack"),
             {ack, Pid, State};
         {ack, Pid, State2} ->
+            trace("processed ack"),
             {ack, Pid, State2};
         {status, Status} ->
+            trace("processed status: ~p", [Status]),
             {status, Status, State};
         {status, Status, State2} ->
+            trace("processed status: ~p", [Status]),
             {status, Status, State2};
         {error, Error} ->
+            trace("processed error: ~p", [Error]),
             {error, Error, State};
         {error, Error, State2} ->
+            trace("processed error: ~p", [Error]),
             {error, Error, State2};
         {stop, Reason, Reply} ->
+            trace("processed stop: ~p ~p", [Reason, Reply]),
             {stop, Reason, Reply, State};
         {stop, Reason, Reply, State2} ->
+            trace("processed stop: ~p ~p", [Reason, Reply]),
             {stop, Reason, Reply, State2}
     end.
 
 
 %% @private
 event_parse(SrvId, Event, Data, Req, State) ->
+    trace("parsing event"),
     case ?CALL_SRV(SrvId, rpc9_parse, [Event, Data, Req, State]) of
         {syntax, Syntax, State2} ->
             case nklib_syntax:parse(Data, Syntax) of
@@ -229,4 +207,15 @@ event_process(SrvId, Event, Data, Req, State) ->
             {stop, Reason, State};
         {stop, Reason, State2} ->
             {stop, Reason, State2}
+    end.
+
+
+%% @private
+check_unknown(Reply, Req) ->
+    case maps:find(unknown_fields, Req) of
+        {ok, Fields} ->
+            trace("unknown fields: ~p", [Fields]),
+            Reply#{unknown_fields=>Fields};
+        error ->
+            Reply
     end.

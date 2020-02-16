@@ -23,7 +23,7 @@
 -export([iter_body/4, stream_start/3, stream_body/2, stream_stop/1]).
 -export([init/4, terminate/3]).
 -export_type([method/0, reply/0, code/0, headers/0, body/0, req/0, path/0, http_qs/0]).
-
+-import(nkserver_trace, [trace/1, trace/2, log/3]).
 
 -include_lib("nkserver/include/nkserver.hrl").
 -include_lib("nkserver/include/nkserver_trace.hrl").
@@ -134,37 +134,15 @@ stream_stop(#{'_cowreq':=CowReq}) ->
 %% @private
 %% Called from middle9_server_protocol:http_init/5
 init(Method, Path, CowReq, NkPort) ->
-    SpanName = list_to_binary([<<"NkRPC9 ">>, Method, <<" ">>, Path]),
+    {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
     {Ip, Port} = cowboy_req:peer(CowReq),
     Peer = <<
         (nklib_util:to_host(Ip))/binary, ":",
         (to_bin(Port))/binary
     >>,
-    {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
-    _Opts = #{
-        base_txt => "NkREST RPC9 (~s, ~s)",
-        base_args => [SrvId, Peer],
-        base_audit => #{group => nkrpc9}
-    },
-    do_init(SrvId, Method, Peer, Path, CowReq, NkPort).
-
-
-%% @private
-do_init(SrvId, Method, Peer, Path, CowReq, NkPort) ->
     Local = nkpacket:get_local_bin(NkPort),
-    {Ip, Port} = cowboy_req:peer(CowReq),
-    Remote = <<
-        (nklib_util:to_host(Ip))/binary, ":",
-        (to_bin(Port))/binary
-    >>,
     SessionId = nklib_util:luid(),
     CT = cowboy_req:header(<<"content-type">>, CowReq),
-%%    ?TAGS(#{
-%%        <<"method">> => Method,
-%%        <<"path">> => Path,
-%%        <<"peer">> => Peer,
-%%        <<"content_type">> => CT
-%%    }),
     Req = #{
         class => ?MODULE,
         srv => SrvId,
@@ -172,63 +150,30 @@ do_init(SrvId, Method, Peer, Path, CowReq, NkPort) ->
         session_id => SessionId,
         session_pid => self(),
         local => Local,
-        remote => Remote,
+        remote => Peer,
         tid => erlang:phash2(SessionId),
         timeout_pending => false,
         debug => get(nkrpc9_debug),
-        ot_span_id => ?MODULE,
         '_cowreq' => CowReq
     },
-    try
-        case Method of
-            <<"POST">> when (Path == [] orelse Path == [<<>>]) ->
-%%                ?INFO("received request (~s) from ~s", [Path, Peer]),
-                {ok, Cmd, Data, CowReq2} = get_cmd_body(SrvId, CowReq),
-                Req2 = Req#{
-                    cmd => Cmd,
-                    data => Data,
-                    '_cowreq' := CowReq2
-                },
-%%                ?INFO("received cmd '~s' from ~s", [Cmd, Peer]),
-                case nkrpc9_process:request(SrvId, Cmd, Data, Req2, #{}) of
-                    {login, _UserId, Reply, _State} ->
-                        send_msg_ok(Reply, CowReq2);
-                    {reply, Reply, _State} ->
-                        send_msg_ok(Reply, CowReq2);
-                    {ack, Pid, _State} ->
-                        Mon = case is_pid(Pid) of
-                            true ->
-                                monitor(process, Pid);
-                            false ->
-                                undefined
-                        end,
-                        wait_ack(Req, Mon);
-                    {error, Error, _State} ->
-                        send_msg_error(SrvId, Error, CowReq2);
-                    {status, Status, _State} ->
-                        send_msg_status(SrvId, Status, CowReq2);
-                    {stop, _Reason, Reply, _State} ->
-                        send_msg_ok(Reply, CowReq2)
-                end;
-            _ ->
-%%                ?INFO("received '~s' (~s) from ~s", [Method, Path, Peer]),
-                case ?CALL_SRV(SrvId, rpc9_http, [Method, Path, Req]) of
-                    {http, Code, RHds, RBody, #{'_cowreq':=CowReq3}} ->
-%%                        ?INFO("send HTTP response: ~p", [Code]),
-                        send_http_reply(Code, RHds, RBody, CowReq3);
-                    {stop, #{'_cowreq':=CowReq3}} ->
-%%                        ?DEBUG("replying stream stop", []),
-                        {ok, CowReq3, []};
-                    {redirect, Path} ->
-                        {redirect, Path};
-                    {cowboy_static, Opts} ->
-                        {cowboy_static, Opts}
-                end
+    SpanOpts = #{
+        session_id => SessionId,
+        remote => Peer,
+        local => Local,
+        content_type => CT,
+        method => Method,
+        path => Path
+    },
+    Fun = fun() ->
+        try
+            do_init(Method, Path, SrvId, Req)
+        catch
+            throw:{TCode, THds, TReply} ->
+                send_http_reply(TCode, THds, TReply, CowReq)
         end
-    catch
-        throw:{TCode, THds, TReply} ->
-            send_http_reply(TCode, THds, TReply, CowReq)
-    end.
+    end,
+    nkserver_trace:new_span(SrvId, {nkrpc9_server_http, request}, Fun, SpanOpts).
+
 
 %% @private
 terminate(_Reason, _Req, _Opts) ->
@@ -238,6 +183,68 @@ terminate(_Reason, _Req, _Opts) ->
 %% ===================================================================
 %% Internal
 %% ===================================================================
+
+
+
+%% @private
+%% Called from middle9_server_protocol:http_init/5
+do_init(<<"POST">>, Path, SrvId, Req) when (Path == [] orelse Path == [<<>>]) ->
+    trace("standard RCP request"),
+    #{'_cowreq':=CowReq} = Req,
+    case get_cmd_body(SrvId, CowReq) of
+        {ok, Cmd, Data, CowReq2} ->
+            trace("body parsed"),
+            Req2 = Req#{
+                cmd => Cmd,
+                data => Data,
+                '_cowreq' := CowReq2
+            },
+            case nkrpc9_process:request(SrvId, Cmd, Data, Req2, #{}) of
+                {login, UserId, Reply, _State} ->
+                    trace("processing login command: ~p, ~p", [UserId, Reply]),
+                    send_msg_ok(Reply, CowReq2);
+                {reply, Reply, _State} ->
+                    trace("processing reply: ~p", [Reply]),
+                    send_msg_ok(Reply, CowReq2);
+                {ack, Pid, _State} ->
+                    Mon = case is_pid(Pid) of
+                        true ->
+                            monitor(process, Pid);
+                        false ->
+                            undefined
+                    end,
+                    trace("processing ack"),
+                    wait_ack(Req, Mon);
+                {error, Error, _State} ->
+                    trace("processing error: ~p", [Error]),
+                    send_msg_error(SrvId, Error, CowReq2);
+                {status, Status, _State} ->
+                    trace("processing status: ~p", [Status]),
+                    send_msg_status(SrvId, Status, CowReq2);
+                {stop, Reason, Reply, _State} ->
+                    trace("processing stop: ~p ~p", [Reason, Reply]),
+                    send_msg_ok(Reply, CowReq2)
+            end;
+        {error, Code, Reply} ->
+            send_http_reply(Code, #{}, Reply, CowReq)
+    end;
+
+do_init(Method, Path, SrvId, Req) ->
+    trace("received '~s' (~s)", [Method, Path]),
+    case ?CALL_SRV(SrvId, rpc9_http, [Method, Path, Req]) of
+        {http, Code, RHds, RBody, #{'_cowreq':=CowReq3}} ->
+            trace("processing HTTP response: ~p", [Code]),
+            send_http_reply(Code, RHds, RBody, CowReq3);
+        {stop, #{'_cowreq':=CowReq3}} ->
+            trace("processing stop"),
+            {ok, CowReq3, []};
+        {redirect, Path} ->
+            trace("processing redirect: ~s", [Path]),
+            {redirect, Path};
+        {cowboy_static, Opts} ->
+            trace("processing static: ~p", [Opts]),
+            {cowboy_static, Opts}
+    end.
 
 
 %% @private
@@ -251,19 +258,19 @@ get_cmd_body(SrvId, CowReq) ->
                 <<"application/json">> ->
                     case nklib_json:decode(Body) of
                         error ->
-                            throw({400, #{}, <<"Invalid json">>});
+                            {error, 400, <<"Invalid json">>};
                         #{<<"cmd">>:=Cmd}=Json ->
                             Data = maps:get(<<"data">>, Json, #{}),
                             {ok, Cmd, Data, CowReq2};
                         _ ->
-                            throw({400, #{}, <<"Invalid API body">>})
+                            {error, 400, <<"Invalid API body">>}
                     end;
                 _ ->
-                    throw({400, #{}, <<"Invalid Content-Type">>})
+                    {error, 400, <<"Invalid Content-Type">>}
             end;
         BL ->
             lager:error("NKLOG Body is too large ~p", [BL]),
-            throw({500, #{}, <<"Body too large">>})
+            {error, 500, <<"Body too large">>}
     end.
 
 
@@ -291,7 +298,7 @@ wait_ack(#{srv:=SrvId, tid:=TId, '_cowreq':=CowReq}=Req, Mon) ->
         {'$gen_cast', rpc9_stop} ->
             ok;
         Other ->
-%%            ?WARNING("unexpected msg in wait_ack: ~p", [Other]),
+            log(notice, "unexpected msg in wait_ack: ~p", [Other]),
             wait_ack(Req, Mon)
     after
         ExtTime ->
@@ -308,7 +315,7 @@ send_msg_ok(Reply, CowReq) ->
         #{} -> Msg1#{data=>Reply};
         List when is_list(List) -> Msg1#{data=>Reply}
     end,
-%%    ?INFO("successful response: ~p", [Msg2]),
+    trace("successful response: ~p", [Msg2]),
     send_http_reply(200, #{}, Msg2, CowReq).
 
 
@@ -323,7 +330,6 @@ send_msg_error(_SrvId, #{status:=Error}=Status, CowReq) ->
             data => maps:get(data, Status, #{})
         }
     },
-%%    ?INFO("error response: ~p", [Msg]),
     send_http_reply(200, #{}, Msg, CowReq);
 
 send_msg_error(SrvId, Error, CowReq) ->
@@ -342,7 +348,6 @@ send_msg_status(_SrvId, #{status:=Result}=Status, CowReq) ->
             data => maps:get(data, Status, #{})
         }
     },
-%%    ?INFO("status response: ~p", [Msg]),
     send_http_reply(200, #{}, Msg, CowReq);
 
 send_msg_status(SrvId, Error, CowReq) ->
@@ -368,7 +373,6 @@ send_http_reply(Code, Hds, Body, CowReq) when is_map(Hds) ->
 
 send_http_reply(Code, Hds, Body, CowReq) when is_list(Hds) ->
     send_http_reply(Code, maps:from_list(Hds), Body, CowReq).
-
 
 
 
