@@ -199,6 +199,7 @@ find_session(SessId) ->
     ext_op_time :: integer(),
     local :: binary(),
     remote :: binary(),
+    transport :: atom(),
     user_id = <<>> :: nkservice:user_id(),
     user_state = #{} :: nkservice:user_state()
 }).
@@ -234,7 +235,8 @@ resolve_opts() ->
 conn_init(NkPort) ->
     {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
     {ok, Local} = nkpacket:get_local_bin(NkPort),
-    {ok, Remote} = nkpacket:get_remote_bin(NkPort),
+    {ok, {_Proto, Transp, Ip, Port}} = nkpacket:get_remote(NkPort),
+    Remote = nkpacket_util:conn_string(Transp, Ip, Port),
     {ok, Opts} = nkpacket:get_opts(NkPort),
     SessId = <<"session-", (nklib_util:luid())/binary>>,
     true = nklib_proc:reg({?MODULE, session, SessId}, <<>>),
@@ -247,6 +249,7 @@ conn_init(NkPort) ->
         session_id = SessId,
         local = Local,
         remote = Remote,
+        transport = Transp,
         op_time = OpTime,
         ext_op_time = ExtTime,
         user_state = UserState
@@ -257,7 +260,8 @@ conn_init(NkPort) ->
         app => SrvId,
         session_id => SessId,
         local => Local,
-        remote => Remote
+        remote => Remote,
+        transport => Transp
     },
     nkserver_trace:new_span(SrvId, {nkrpc9_server, connection}, infinity, SpanOpts),
     log(info, "new connection (~s, ~p) (Idle:~p)", [Remote, self(), Idle]),
@@ -487,9 +491,12 @@ conn_handle_info(Info, NkPort, State) ->
     ok.
 
 conn_stop(Reason, NkPort, State) ->
+    %lager:error("NKLOG STOPa"),
     catch handle(rpc9_terminate, [Reason], NkPort, State),
-    nkserver_trace:finish_span().
-
+    %lager:error("NKLOG STOPb"),
+    nkserver_trace:finish_span(),
+    %lager:error("NKLOG STOPc").
+    ok.
 
 %% ===================================================================
 %% HTTP Protocol callbacks

@@ -140,7 +140,7 @@ init(Method, Path, CowReq, NkPort) ->
         (nklib_util:to_host(Ip))/binary, ":",
         (to_bin(Port))/binary
     >>,
-    Local = nkpacket:get_local_bin(NkPort),
+    {ok, Local} = nkpacket:get_local_bin(NkPort),
     SessionId = nklib_util:luid(),
     CT = cowboy_req:header(<<"content-type">>, CowReq),
     Req = #{
@@ -162,7 +162,7 @@ init(Method, Path, CowReq, NkPort) ->
         local => Local,
         content_type => CT,
         method => Method,
-        path => Path
+        path => cowboy_req:path(CowReq)
     },
     Fun = fun() ->
         try
