@@ -198,7 +198,9 @@ find_session(SessId) ->
     op_time :: integer(),
     ext_op_time :: integer(),
     local :: binary(),
+    local_port :: integer(),
     remote :: binary(),
+    remote_port :: integer(),
     transport :: atom(),
     user_id = <<>> :: nkservice:user_id(),
     user_state = #{} :: nkservice:user_state()
@@ -234,11 +236,12 @@ resolve_opts() ->
 
 conn_init(NkPort) ->
     {ok, _Class, {nkrpc9_server, SrvId}} = nkpacket:get_id(NkPort),
-    {ok, Local} = nkpacket:get_local_bin(NkPort),
-    {ok, {_Proto, Transp, Ip, Port}} = nkpacket:get_remote(NkPort),
-    Remote = nkpacket_util:conn_string(Transp, Ip, Port),
+    {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(NkPort),
+    {ok, {_Proto, Transp, RemIp, RemPort}} = nkpacket:get_remote(NkPort),
+    Local = nklib_util:to_host(LocalIp),
+    Remote = nklib_util:to_host(RemIp),
     {ok, Opts} = nkpacket:get_opts(NkPort),
-    SessId = <<"session-", (nklib_util:luid())/binary>>,
+    SessId = nklib_util:luid(),
     true = nklib_proc:reg({?MODULE, session, SessId}, <<>>),
     pg2:join({nkrpc9_server, SrvId}, self()),
     OpTime = nkserver:get_cached_config(SrvId, nkrpc9_server, cmd_timeout),
@@ -248,8 +251,9 @@ conn_init(NkPort) ->
         srv_id = SrvId,
         session_id = SessId,
         local = Local,
-        remote = Remote,
+        local_port = LocalPort,
         transport = Transp,
+        remote = Remote,
         op_time = OpTime,
         ext_op_time = ExtTime,
         user_state = UserState
@@ -260,7 +264,9 @@ conn_init(NkPort) ->
         app => SrvId,
         session_id => SessId,
         local => Local,
+        local_port => LocalPort,
         remote => Remote,
+        remote_port => RemPort,
         transport => Transp
     },
     nkserver_trace:new_span(SrvId, {nkrpc9_server, connection}, infinity, SpanOpts),
