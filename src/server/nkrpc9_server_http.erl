@@ -204,13 +204,11 @@ do_init(<<"POST">>, Path, SrvId, Req) when (Path == [] orelse Path == [<<>>]) ->
                 data => Data,
                 '_cowreq' := CowReq2
             },
-            nkserver_trace:tags(#{cmd=>Cmd}),
+            nkserver_trace:tags(#{<<"request.cmd">>=>Cmd}),
             case nkrpc9_process:request(SrvId, Cmd, Data, Req2, #{}) of
                 {login, UserId, Reply, _State} ->
-                    trace("processing login command: ~p, ~p", [UserId]),
                     send_msg_ok(Reply, CowReq2);
                 {reply, Reply, _State} ->
-                    trace("processing reply"),
                     send_msg_ok(Reply, CowReq2);
                 {ack, Pid, _State} ->
                     Mon = case is_pid(Pid) of
@@ -219,16 +217,12 @@ do_init(<<"POST">>, Path, SrvId, Req) when (Path == [] orelse Path == [<<>>]) ->
                         false ->
                             undefined
                     end,
-                    trace("processing ack"),
                     wait_ack(Req, Mon);
                 {error, Error, _State} ->
-                    trace("processing error: ~p", [Error]),
                     send_msg_error(SrvId, Error, CowReq2);
                 {status, Status, _State} ->
-                    trace("processing status: ~p", [Status]),
                     send_msg_status(SrvId, Status, CowReq2);
                 {stop, Reason, Reply, _State} ->
-                    trace("processing stop: ~p ~p", [Reason, Reply]),
                     send_msg_ok(Reply, CowReq2)
             end;
         {error, Code, Reply} ->

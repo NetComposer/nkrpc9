@@ -34,34 +34,6 @@
 -export([http_init/4]).
 -import(nkserver_trace, [trace/1, trace/2, log/3]).
 
--define(DEBUG(Txt, Args, State),
-    case erlang:get(nkrpc9_protocol) of
-        true -> ?LLOG(debug, Txt, Args, State);
-        _ -> ok
-    end).
-
--define(LLOG(Type, Txt, Args, State),
-    lager:Type(
-        [
-            {session_id, State#state.session_id},
-            {srv_id, State#state.srv_id},
-            {user_id, State#state.user_id}
-        ],
-        "RPC9 Server ~s (~s) (~s) "++Txt,
-        [
-            State#state.session_id,
-            State#state.srv_id,
-            State#state.user_id
-            | Args
-        ])).
-
--define(MSG(Txt, Args, State),
-    case erlang:get(nkrpc9_msgs) of
-        true -> print(Txt, Args, State);
-        _ -> ok
-    end).
-
-
 -define(SYNC_CALL_TIMEOUT, 5000).     % Maximum sync call time
 
 
@@ -288,13 +260,13 @@ conn_parse({text, Text}, NkPort, State) ->
     Msg = nklib_json:decode(Text),
     case Msg of
         #{<<"cmd">> := Cmd, <<"tid">> := TId} ->
-            log(debug, "cmd recreceived ~s", [Msg]),
+            trace("cmd received ~p", [Msg]),
             Cmd2 = get_cmd(Cmd, Msg),
             Data = maps:get(<<"data">>, Msg, #{}),
             process_client_req(Cmd2, Data, TId, NkPort, State);
         #{<<"event">> := Event} ->
             Data = maps:get(<<"data">>, Msg, #{}),
-            log(debug, "event received ~s", [Msg]),
+            trace("event received ~s", [Msg]),
             process_client_event(Event, Data, State);
         #{<<"result">> := Result, <<"tid">> := TId} when is_binary(Result) ->
             case extract_op(TId, State) of
@@ -303,7 +275,7 @@ conn_parse({text, Text}, NkPort, State) ->
                         #trans{op=#{cmd:=<<"ping">>}} ->
                             ok;
                         _ ->
-                            log(debug, "result received ~s", [Msg])
+                            trace("result received ~s", [Msg])
                     end,
                     Data = maps:get(<<"data">>, Msg, #{}),
                     process_client_resp(Trans, Result, Data, State2);
@@ -313,7 +285,7 @@ conn_parse({text, Text}, NkPort, State) ->
                     {ok, State}
             end;
         #{<<"ack">> := TId} ->
-            log(debug, "ack received ~s", [Msg]),
+            trace("ack received ~s", [TId]),
             case extract_op(TId, State) of
                 {Trans, State2} ->
                     {ok, extend_op(TId, Trans, State2)};
@@ -384,8 +356,8 @@ conn_handle_cast({rpc9_reply_login, UserId2, Reply, TId, StateFun}, NkPort, Stat
                     send_reply_ok(Reply, TId, NkPort, State3)
             end;
         not_found ->
-            ?LLOG(notice, "received user reply_ok for unknown req: ~p ~p",
-                [TId, State#state.trans], State),
+            log(notice, "received user reply_ok for unknown req: ~p ~p",
+                [TId, State#state.trans]),
             {ok, State}
     end;
 
@@ -395,8 +367,8 @@ conn_handle_cast({rpc9_reply_ok, Reply, TId, StateFun}, NkPort, State) ->
             State3 = apply_user_state(StateFun, State2),
             send_reply_ok(Reply, TId, NkPort, State3);
         not_found ->
-            ?LLOG(notice, "received user reply_ok for unknown req: ~p ~p",
-                [TId, State#state.trans], State),
+            log(notice, "received user reply_ok for unknown req: ~p ~p",
+                [TId, State#state.trans]),
             {ok, State}
     end;
 
@@ -406,8 +378,8 @@ conn_handle_cast({rpc9_reply_status, Status, TId, StateFun}, NkPort, State) ->
             State3 = apply_user_state(StateFun, State2),
             send_reply_status(Status, TId, NkPort, State3);
         not_found ->
-            ?LLOG(notice, "received user reply_error for unknown req: ~p ~p",
-                [TId, State#state.trans], State),
+            log(notice, "received user reply_error for unknown req: ~p ~p",
+                [TId, State#state.trans]),
             {ok, State}
     end;
 
@@ -417,8 +389,8 @@ conn_handle_cast({rpc9_reply_error, Error, TId, StateFun}, NkPort, State) ->
             State3 = apply_user_state(StateFun, State2),
             send_reply_error(Error, TId, NkPort, State3);
         not_found ->
-            ?LLOG(notice, "received user reply_error for unknown req: ~p ~p",
-                [TId, State#state.trans], State),
+            log(notice, "received user reply_error for unknown req: ~p ~p",
+                [TId, State#state.trans]),
             {ok, State}
     end;
 
@@ -429,12 +401,12 @@ conn_handle_cast({rpc9_reply_ack, Pid, TId, Meta, StateFun}, NkPort, State) ->
             State4 = apply_user_state(StateFun, State3),
             send_ack(TId, Meta, NkPort, State4);
         not_found ->
-            ?LLOG(notice, "received user reply_ack for unknown req", [], State),
+            log(notice, "received user reply_ack for unknown req", []),
             {ok, State}
     end;
 
 conn_handle_cast(rpc9_stop, _NkPort, State) ->
-    ?LLOG(info, "user stop", [], State),
+    trace("user stop"),
     {stop, normal, State};
 
 conn_handle_cast({rpc9_start_ping, MSecs}, _NkPort, #state{ping=Ping}=State) ->
@@ -468,7 +440,7 @@ conn_handle_info({timeout, _, {rpc9_op_timeout, TId}}, _NkPort, State) ->
         {#trans{op=Op, from=From}, State2} ->
             Msg = #{<<"code">> => <<"timeout">>, <<"error">> => <<"Operation timeout">>},
             nklib_util:reply(From, {ok, <<"error">>, Msg}),
-            ?LLOG(notice, "operation ~p (~p) timeout!", [Op, TId], State),
+            log(info, "operation ~p (~p) timeout!", [Op, TId]),
             {stop, normal, State2};
         not_found ->
             {ok, State}
@@ -481,8 +453,8 @@ conn_handle_info({'EXIT', _Pid, _}, _NkPort, State) ->
 conn_handle_info({'DOWN', Ref, process, Pid, Reason}=Info, NkPort, State) ->
     case extract_op_mon(Ref, State) of
         {true, TId, #trans{op=Op}, State2} ->
-            ?LLOG(notice, "operation ~p (~p) process down! (~p, ~p)",
-                  [Op, TId, Pid, Reason], State),
+            log(info, "operation ~p (~p) process down! (~p, ~p)",
+                  [Op, TId, Pid, Reason]),
             send_reply_error(process_down, TId, NkPort, State2);
         false ->
             handle(rpc9_handle_info, [Info], NkPort, State)
@@ -497,11 +469,8 @@ conn_handle_info(Info, NkPort, State) ->
     ok.
 
 conn_stop(Reason, NkPort, State) ->
-    %lager:error("NKLOG STOPa"),
     catch handle(rpc9_terminate, [Reason], NkPort, State),
-    %lager:error("NKLOG STOPb"),
     nkserver_trace:finish_span(),
-    %lager:error("NKLOG STOPc").
     ok.
 
 %% ===================================================================
@@ -695,7 +664,7 @@ extract_op_mon(Mon, #state{trans=AllTrans}=State) ->
 %% @private
 extend_op(TId, #trans{timer=Timer}=Trans, #state{trans=AllTrans, ext_op_time=Time}=State) ->
     nklib_util:cancel_timer(Timer),
-    ?DEBUG("extended op, new time: ~p", [Time], State),
+    trace("extended op, new time: ~p", [Time]),
     Timer2 = erlang:start_timer(Time, self(), {rpc9_op_timeout, TId}),
     Trans2 = Trans#trans{timer=Timer2},
     State#state{trans=maps:put(TId, Trans2, AllTrans)}.
@@ -790,12 +759,12 @@ send_event(Event, Data, NkPort, State) ->
 
 %% @private
 send(Msg, NkPort, State) ->
-    ?MSG("sending ~s", [Msg], State),
+    log(debug, "sending ~p", [Msg]),
     case catch send(Msg, NkPort) of
         ok ->
             {ok, State};
         _ ->
-            ?LLOG(notice, "error sending reply: ~p", [Msg], State),
+            log(notice, "error sending reply: ~p", [Msg]),
             {stop, normal, State}
     end.
 
@@ -805,25 +774,23 @@ send(Msg, NkPort) ->
     nkpacket_connection:send(NkPort, Msg).
 
 
-%% @private
-print(_Txt, [#{cmd:=<<"ping">>}], _State) ->
-    ok;
-print(Txt, [#{}=Map], State) ->
-    print(Txt, [nklib_json:encode_pretty(Map)], State);
-print(Txt, Args, State) ->
-    ?LLOG(debug, Txt, Args, State).
+%%%% @private
+%%print(_Txt, [#{cmd:=<<"ping">>}], _State) ->
+%%    ok;
+%%print(Txt, [#{}=Map], State) ->
+%%    print(Txt, [nklib_json:encode_pretty(Map)], State);
+%%print(Txt, Args, _State) ->
+%%    log(debug, Txt, Args).
 
 
 
 %% @private
-set_debug(#state{srv_id = SrvId}=State) ->
+set_debug(#state{srv_id = SrvId}) ->
     Debug = nkserver:get_cached_config(SrvId, nkrpc9_server, debug),
     Protocol = lists:member(protocol, Debug),
     Msgs = lists:member(msgs, Debug),
     put(nkrpc9_protocol, Protocol),
-    put(nkrpc9_msgs, Msgs),
-    ?DEBUG("debug system activated", [], State),
-    ?MSG("msgs system activated", [], State).
+    put(nkrpc9_msgs, Msgs).
 
 
 %% @private
