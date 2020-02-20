@@ -230,10 +230,8 @@ conn_init(NkPort) ->
         ext_op_time = ExtTime,
         user_state = UserState
     },
-    set_debug(State1),
     Idle = maps:get(idle_timeout, Opts),
     SpanOpts = #{
-        app => SrvId,
         session_id => SessId,
         local => Local,
         local_port => LocalPort,
@@ -260,7 +258,8 @@ conn_parse({text, Text}, NkPort, State) ->
     Msg = nklib_json:decode(Text),
     case Msg of
         #{<<"cmd">> := Cmd, <<"tid">> := TId} ->
-            trace("cmd received ~p", [Msg]),
+            Msg2 = nkserver_trace:clean(Msg),
+            trace("cmd received ~p", [Msg2]),
             Cmd2 = get_cmd(Cmd, Msg),
             Data = maps:get(<<"data">>, Msg, #{}),
             process_client_req(Cmd2, Data, TId, NkPort, State);
@@ -492,32 +491,42 @@ http_init(Paths, CowReq, _Env, NkPort) ->
 
 %% @private
 process_client_req(Cmd, Data, TId, NkPort, State) ->
-    #state{srv_id=SrvId, user_id=UserId, user_state=UserState} = State,
-    Req = make_req(TId, State),
-    case nkrpc9_process:request(SrvId, Cmd, Data, Req, UserState) of
-        {login, UserId2, Reply, UserState2} ->
-            State2 = apply_user_state(UserState2, State),
-            case UserId == <<>> andalso UserId2 /= <<>> of
-                true ->
-                    process_login(UserId2, Reply, TId, NkPort, State2);
-                false when UserId /= UserId2 ->
-                    send_reply_error(invalid_login_request, TId, NkPort, State2);
-                false ->
-                    send_reply_ok(Reply, TId, NkPort, State2)
-            end;
-        {reply, Reply, UserState2} ->
-            send_reply_ok(Reply, TId, NkPort, apply_user_state(UserState2, State));
-        {ack, Pid, UserState2} ->
-            State2 = insert_ack(TId, Pid, apply_user_state(UserState2, State)),
-            send_ack(TId, #{}, NkPort, State2#state{user_state=UserState2});
-        {status, Status, UserState2} ->
-            send_reply_status(Status, TId, NkPort, apply_user_state(UserState2, State));
-        {error, Error, UserState2} ->
-            send_reply_error(Error, TId, NkPort, apply_user_state(UserState2, State));
-        {stop, _Reason, Reply, UserState2} ->
-            stop(self()),
-            send_reply_ok(Reply, TId, NkPort, apply_user_state(UserState2, State))
-    end.
+    #state{
+        srv_id = SrvId,
+        user_id = UserId,
+        user_state = UserState,
+        session_id = SessId,
+        transport = Transp
+    } = State,
+    Fun = fun() ->
+        Req = make_req(TId, State),
+        case nkrpc9_process:request(SrvId, Cmd, Data, Req, UserState) of
+            {login, UserId2, Reply, UserState2} ->
+                State2 = apply_user_state(UserState2, State),
+                case UserId == <<>> andalso UserId2 /= <<>> of
+                    true ->
+                        process_login(UserId2, Reply, TId, NkPort, State2);
+                    false when UserId /= UserId2 ->
+                        send_reply_error(invalid_login_request, TId, NkPort, State2);
+                    false ->
+                        send_reply_ok(Reply, TId, NkPort, State2)
+                end;
+            {reply, Reply, UserState2} ->
+                send_reply_ok(Reply, TId, NkPort, apply_user_state(UserState2, State));
+            {ack, Pid, UserState2} ->
+                State2 = insert_ack(TId, Pid, apply_user_state(UserState2, State)),
+                send_ack(TId, #{}, NkPort, State2#state{user_state=UserState2});
+            {status, Status, UserState2} ->
+                send_reply_status(Status, TId, NkPort, apply_user_state(UserState2, State));
+            {error, Error, UserState2} ->
+                send_reply_error(Error, TId, NkPort, apply_user_state(UserState2, State));
+            {stop, _Reason, Reply, UserState2} ->
+                stop(self()),
+                send_reply_ok(Reply, TId, NkPort, apply_user_state(UserState2, State))
+        end
+    end,
+    Opts = #{parent=>none, user_uid=>UserId, session_id=>SessId, transport=>Transp},
+    nkserver_trace:new_span(SrvId, {nkrpc9_server_ws, request, Cmd}, Fun, Opts).
 
 
 %% @private
@@ -784,13 +793,13 @@ send(Msg, NkPort) ->
 
 
 
-%% @private
-set_debug(#state{srv_id = SrvId}) ->
-    Debug = nkserver:get_cached_config(SrvId, nkrpc9_server, debug),
-    Protocol = lists:member(protocol, Debug),
-    Msgs = lists:member(msgs, Debug),
-    put(nkrpc9_protocol, Protocol),
-    put(nkrpc9_msgs, Msgs).
+%%%% @private
+%%set_debug(#state{srv_id = SrvId}) ->
+%%    Debug = nkserver:get_cached_config(SrvId, nkrpc9_server, debug),
+%%    Protocol = lists:member(protocol, Debug),
+%%    Msgs = lists:member(msgs, Debug),
+%%    put(nkrpc9_protocol, Protocol),
+%%    put(nkrpc9_msgs, Msgs).
 
 
 %% @private

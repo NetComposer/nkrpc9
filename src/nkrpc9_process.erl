@@ -121,7 +121,7 @@ request_process(SrvId, Cmd, Data, Req, State) ->
             trace("rpc9 processed login: ~s", [UserId]),
             {login, UserId, check_unknown(Reply, Req), State};
         {login, UserId, Reply, State2} ->
-            trace("rpc9 processed login: ~s ~p", [UserId]),
+            trace("rpc9 processed login: ~s", [UserId]),
             {login, UserId, check_unknown(Reply, Req), State2};
         {reply, Reply, State2} ->
             trace("rpc9 processed reply"),
