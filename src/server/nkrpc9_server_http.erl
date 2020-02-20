@@ -206,7 +206,7 @@ do_init(<<"POST">>, Path, SrvId, Req) when (Path == [] orelse Path == [<<>>]) ->
             },
             nkserver_trace:tags(#{<<"request.cmd">>=>Cmd}),
             case nkrpc9_process:request(SrvId, Cmd, Data, Req2, #{}) of
-                {login, UserId, Reply, _State} ->
+                {login, _UserId, Reply, _State} ->
                     send_msg_ok(Reply, CowReq2);
                 {reply, Reply, _State} ->
                     send_msg_ok(Reply, CowReq2);
@@ -222,7 +222,7 @@ do_init(<<"POST">>, Path, SrvId, Req) when (Path == [] orelse Path == [<<>>]) ->
                     send_msg_error(SrvId, Error, CowReq2);
                 {status, Status, _State} ->
                     send_msg_status(SrvId, Status, CowReq2);
-                {stop, Reason, Reply, _State} ->
+                {stop, _Reason, Reply, _State} ->
                     send_msg_ok(Reply, CowReq2)
             end;
         {error, Code, Reply} ->
