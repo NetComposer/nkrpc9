@@ -226,6 +226,7 @@ conn_init(NkPort) ->
         local_port = LocalPort,
         transport = Transp,
         remote = Remote,
+        remote_port = RemPort,
         op_time = OpTime,
         ext_op_time = ExtTime,
         user_state = UserState

@@ -139,7 +139,6 @@ init(Method, Path, CowReq, NkPort) ->
     Remote = nklib_util:to_host(RemIp),
     {ok, {_, _, LocalIp, LocalPort}} = nkpacket:get_local(NkPort),
     Local = nklib_util:to_host(LocalIp),
-
     SessionId = nklib_util:luid(),
     CT = cowboy_req:header(<<"content-type">>, CowReq),
     Req = #{
