@@ -22,7 +22,7 @@
 -module(nkrpc9_process).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([request/5, event/5, result/6]).
--import(nkserver_trace, [trace/1, trace/2]).
+-import(nkserver_trace, [trace/1, trace/2, log/2, log/3]).
 
 -include_lib("nkserver/include/nkserver.hrl").
 
@@ -38,7 +38,7 @@ event(SrvId, Event, Data, Req, State) ->
 
 %% @doc
 result(SrvId, Result, Data, Op, From, State) ->
-    trace("rpc9 result: ~p", [Result]),
+    trace("calling rpc9_result: ~p", [Result]),
     case ?CALL_SRV(SrvId, rpc9_result, [Result, Data, Op, From, State]) of
         {reply, _Result2, _Data2, State2} when From==undefined ->
             {ok, State2};
@@ -52,7 +52,7 @@ result(SrvId, Result, Data, Op, From, State) ->
 
 %% @private
 request_parse(SrvId, Cmd, Data, Req, State) ->
-    trace("rpc9 parsing request"),
+    trace("calling rpc9_parse"),
     case ?CALL_SRV(SrvId, rpc9_parse, [Cmd, Data, Req, State]) of
         {syntax, Syntax} ->
             case nklib_syntax:parse(Data, Syntax) of
@@ -79,89 +79,89 @@ request_parse(SrvId, Cmd, Data, Req, State) ->
         {ok, Data2, State2} ->
             request_allow(SrvId, Cmd, Data2, Req, State2);
         {status, Status} ->
-            trace("rpc9 processed status: ~p", [Status]),
+            log(info, "rpc9 processed status: ~p", [Status]),
             {status, Status, State};
         {status, Status, State2} ->
-            trace("rpc9 processed status: ~p", [Status]),
+            log(info, "rpc9 processed status: ~p", [Status]),
             {status, Status, State2};
         {error, Error} ->
-            trace("rpc9 processed error: ~p", [Error]),
+            log(info, "rpc9 processed error: ~p", [Error]),
             {error, Error, State};
         {error, Error, State2} ->
-            trace("rpc9 processed error: ~p", [Error]),
+            log(info, "rpc9 processed error: ~p", [Error]),
             {error, Error, State2};
         {stop, Reason, Reply} ->
-            trace("rpc9 processed stop: ~p", [Reason]),
+            log(info, "rpc9 processed stop: ~p", [Reason]),
             {stop, Reason, Reply, State};
         {stop, Reason, Reply, State2} ->
-            trace("rpc9 processed stop: ~p", [Reason]),
+            log(info, "rpc9 processed stop: ~p", [Reason]),
             {stop, Reason, Reply, State2}
     end.
 
 
 %% @private
 request_allow(SrvId, Cmd, Data, Req, State) ->
-    trace("rpc9 allowing request"),
+    trace("calling rpc9_allow"),
     case ?CALL_SRV(SrvId, rpc9_allow, [Cmd, Data, Req, State]) of
         true ->
             request_process(SrvId, Cmd, Data, Req, State);
         {true, State2} ->
             request_process(SrvId, Cmd, Data, Req, State2);
         false ->
-            trace("rpc9 request NOT allowed"),
+            log(info, "rpc9 request NOT allowed"),
             {error, unauthorized, State}
     end.
 
 
 %% @private
 request_process(SrvId, Cmd, Data, Req, State) ->
-    trace("rpc9 request allowed"),
+    log(info, "rpc9 request ALLOWED"),
     case ?CALL_SRV(SrvId, rpc9_request, [Cmd, Data, Req, State]) of
         {login, UserId, Reply} ->
-            trace("rpc9 processed login: ~s", [UserId]),
+            log(info, "rpc9 processed login: ~s", [UserId]),
             {login, UserId, check_unknown(Reply, Req), State};
         {login, UserId, Reply, State2} ->
-            trace("rpc9 processed login: ~s", [UserId]),
+            log(info, "rpc9 processed login: ~s", [UserId]),
             {login, UserId, check_unknown(Reply, Req), State2};
         {reply, Reply, State2} ->
-            trace("rpc9 processed reply"),
+            log(info, "rpc9 processed reply"),
             {reply, check_unknown(Reply, Req), State2};
         {reply, Reply} ->
-            trace("rpc9 processed reply"),
+            log(info, "rpc9 processed reply"),
             {reply, check_unknown(Reply, Req), State};
         ack ->
-            trace("rpc9 processed ack"),
+            log(info, "rpc9 processed ack"),
             {ack, undefined, State};
         {ack, Pid} ->
-            trace("rpc9 processed ack"),
+            log(info, "rpc9 processed ack"),
             {ack, Pid, State};
         {ack, Pid, State2} ->
-            trace("rpc9 processed ack"),
+            log(info, "rpc9 processed ack"),
             {ack, Pid, State2};
         {status, Status} ->
-            trace("rpc9 processed status: ~p", [Status]),
+            log(info, "rpc9 processed status: ~p", [Status]),
             {status, Status, State};
         {status, Status, State2} ->
-            trace("rpc9 processed status: ~p", [Status]),
+            log(info, "rpc9 processed status: ~p", [Status]),
             {status, Status, State2};
         {error, Error} ->
-            trace("rpc9 processed error: ~p", [Error]),
+            log(info, "rpc9 processed error: ~p", [Error]),
             {error, Error, State};
         {error, Error, State2} ->
-            trace("rpc9 processed error: ~p", [Error]),
+            log(info, "rpc9 processed error: ~p", [Error]),
             {error, Error, State2};
         {stop, Reason, Reply} ->
-            trace("rpc9 processed stop: ~p", [Reason]),
+            log(info, "rpc9 processed stop: ~p", [Reason]),
             {stop, Reason, Reply, State};
         {stop, Reason, Reply, State2} ->
-            trace("rpc9 processed stop: ~p", [Reason]),
+            log(info, "rpc9 processed stop: ~p", [Reason]),
             {stop, Reason, Reply, State2}
     end.
 
 
 %% @private
 event_parse(SrvId, Event, Data, Req, State) ->
-    trace("parsing event"),
+    trace("calling rpc9_parse"),
     case ?CALL_SRV(SrvId, rpc9_parse, [Event, Data, Req, State]) of
         {syntax, Syntax, State2} ->
             case nklib_syntax:parse(Data, Syntax) of
@@ -214,7 +214,7 @@ event_process(SrvId, Event, Data, Req, State) ->
 check_unknown(Reply, Req) ->
     case maps:find(unknown_fields, Req) of
         {ok, Fields} ->
-            trace("unknown fields: ~p", [Fields]),
+            log(info, "unknown fields: ~p", [Fields]),
             Reply#{unknown_fields=>Fields};
         error ->
             Reply

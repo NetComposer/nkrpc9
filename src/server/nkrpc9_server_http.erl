@@ -23,7 +23,7 @@
 -export([iter_body/4, stream_start/3, stream_body/2, stream_stop/1]).
 -export([init/4, terminate/3]).
 -export_type([method/0, reply/0, code/0, headers/0, body/0, req/0, path/0, http_qs/0]).
--import(nkserver_trace, [trace/1, trace/2, log/3]).
+-import(nkserver_trace, [trace/1, trace/2, log/2, log/3]).
 
 -include_lib("nkserver/include/nkserver.hrl").
 -include_lib("nkserver/include/nkserver_trace.hrl").
@@ -193,7 +193,7 @@ terminate(_Reason, _Req, _Opts) ->
 %% @private
 %% Called from middle9_server_protocol:http_init/5
 do_init(<<"POST">>, Path, SrvId, Req) when (Path == [] orelse Path == [<<>>]) ->
-    trace("standard RCP request"),
+    log(info, "standard RPC request"),
     #{'_cowreq':=CowReq} = Req,
     case get_cmd_body(SrvId, CowReq) of
         {ok, Cmd, Data, CowReq2} ->
@@ -229,19 +229,19 @@ do_init(<<"POST">>, Path, SrvId, Req) when (Path == [] orelse Path == [<<>>]) ->
     end;
 
 do_init(Method, Path, SrvId, Req) ->
-    trace("received '~s' (~s)", [Method, Path]),
+    log(info, "RPC9 received '~s' (~s)", [Method, Path]),
     case ?CALL_SRV(SrvId, rpc9_http, [Method, Path, Req]) of
         {http, Code, RHds, RBody, #{'_cowreq':=CowReq3}} ->
-            trace("processing HTTP response: ~p", [Code]),
+            log(info, "processing HTTP response: ~p", [Code]),
             send_http_reply(Code, RHds, RBody, CowReq3);
         {stop, #{'_cowreq':=CowReq3}} ->
-            trace("processing stop"),
+            log(info, "processing stop"),
             {ok, CowReq3, []};
         {redirect, Path} ->
-            trace("processing redirect: ~s", [Path]),
+            log(info, "processing redirect: ~s", [Path]),
             {redirect, Path};
         {cowboy_static, Opts} ->
-            trace("processing static: ~p", [Opts]),
+            log(info, "processing static: ~p", [Opts]),
             {cowboy_static, Opts}
     end.
 
@@ -314,7 +314,7 @@ send_msg_ok(Reply, CowReq) ->
         #{} -> Msg1#{data=>Reply};
         List when is_list(List) -> Msg1#{data=>Reply}
     end,
-    trace("successful response: ~p", [Msg2]),
+    log(debug, "successful response: ~p", [Msg2]),
     send_http_reply(200, #{}, Msg2, CowReq).
 
 
@@ -329,7 +329,7 @@ send_msg_error(_SrvId, #{status:=Error}=Status, CowReq) ->
             data => maps:get(data, Status, #{})
         }
     },
-    trace("error response: ~p", [Status]),
+    log(info, "error response: ~p", [Status]),
     send_http_reply(200, #{}, Msg, CowReq);
 
 send_msg_error(SrvId, Error, CowReq) ->
@@ -348,7 +348,7 @@ send_msg_status(_SrvId, #{status:=Result}=Status, CowReq) ->
             data => maps:get(data, Status, #{})
         }
     },
-    trace("status response: ~p", [Status]),
+    log(debug, "status response: ~p", [Status]),
     send_http_reply(200, #{}, Msg, CowReq);
 
 send_msg_status(SrvId, Error, CowReq) ->

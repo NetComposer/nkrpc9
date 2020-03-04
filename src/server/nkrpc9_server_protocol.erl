@@ -32,7 +32,7 @@
 -export([conn_init/1, conn_encode/2, conn_parse/3, conn_handle_call/4,
          conn_handle_cast/3, conn_handle_info/3, conn_stop/3]).
 -export([http_init/4]).
--import(nkserver_trace, [trace/1, trace/2, log/3]).
+-import(nkserver_trace, [trace/1, trace/2, log/2, log/3]).
 
 -define(SYNC_CALL_TIMEOUT, 5000).     % Maximum sync call time
 
@@ -243,7 +243,7 @@ conn_init(NkPort) ->
     nkserver_trace:new_span(SrvId, {nkrpc9_server, connection}, infinity, SpanOpts),
     log(info, "new connection (~s, ~p) (Idle:~p)", [Remote, self(), Idle]),
     {ok, State2} = handle(rpc9_init, [SrvId, NkPort], NkPort, State1),
-    trace("connection initialized"),
+    log(debug, "connection initialized"),
     {ok, State2}.
 
 
@@ -252,7 +252,7 @@ conn_init(NkPort) ->
     {ok, #state{}} | {stop, term(), #state{}}.
 
 conn_parse(close, _NkPort, State) ->
-    trace("connection closed"),
+    log(debug, "connection closed"),
     {ok, State};
 
 conn_parse({text, Text}, NkPort, State) ->
@@ -260,13 +260,13 @@ conn_parse({text, Text}, NkPort, State) ->
     case Msg of
         #{<<"cmd">> := Cmd, <<"tid">> := TId} ->
             Msg2 = nkserver_trace:clean(Msg),
-            trace("cmd received ~p", [Msg2]),
+            log(info, "cmd received ~p", [Msg2]),
             Cmd2 = get_cmd(Cmd, Msg),
             Data = maps:get(<<"data">>, Msg, #{}),
             process_client_req(Cmd2, Data, TId, NkPort, State);
         #{<<"event">> := Event} ->
             Data = maps:get(<<"data">>, Msg, #{}),
-            trace("event received ~s", [Msg]),
+            log(info, "event received ~s", [Msg]),
             process_client_event(Event, Data, State);
         #{<<"result">> := Result, <<"tid">> := TId} when is_binary(Result) ->
             case extract_op(TId, State) of
@@ -275,7 +275,7 @@ conn_parse({text, Text}, NkPort, State) ->
                         #trans{op=#{cmd:=<<"ping">>}} ->
                             ok;
                         _ ->
-                            trace("result received ~s", [Msg])
+                            log(info, "result received ~s", [Msg])
                     end,
                     Data = maps:get(<<"data">>, Msg, #{}),
                     process_client_resp(Trans, Result, Data, State2);
@@ -406,7 +406,7 @@ conn_handle_cast({rpc9_reply_ack, Pid, TId, Meta, StateFun}, NkPort, State) ->
     end;
 
 conn_handle_cast(rpc9_stop, _NkPort, State) ->
-    trace("user stop"),
+    log(debug, "user stop"),
     {stop, normal, State};
 
 conn_handle_cast({rpc9_start_ping, MSecs}, _NkPort, #state{ping=Ping}=State) ->
@@ -674,7 +674,7 @@ extract_op_mon(Mon, #state{trans=AllTrans}=State) ->
 %% @private
 extend_op(TId, #trans{timer=Timer}=Trans, #state{trans=AllTrans, ext_op_time=Time}=State) ->
     nklib_util:cancel_timer(Timer),
-    trace("extended op, new time: ~p", [Time]),
+    log(debug, "extended op, new time: ~p", [Time]),
     Timer2 = erlang:start_timer(Time, self(), {rpc9_op_timeout, TId}),
     Trans2 = Trans#trans{timer=Timer2},
     State#state{trans=maps:put(TId, Trans2, AllTrans)}.
