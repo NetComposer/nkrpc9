@@ -176,7 +176,7 @@ init(Method, Path, CowReq, NkPort) ->
                 send_http_reply(TCode, THds, TReply, CowReq)
         end
     end,
-    nkserver_trace:new_span(SrvId, {nkrpc9_server_http, request}, Fun, SpanOpts).
+    nkserver_trace:new_span(SrvId, {trace_nkrpc9_server_http, request}, Fun, SpanOpts).
 
 
 %% @private

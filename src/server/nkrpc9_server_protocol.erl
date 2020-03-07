@@ -240,7 +240,7 @@ conn_init(NkPort) ->
         remote_port => RemPort,
         transport => Transp
     },
-    nkserver_trace:new_span(SrvId, {nkrpc9_server, connection}, infinity, SpanOpts),
+    nkserver_trace:new_span(SrvId, {trace_nkrpc9_server, connection}, infinity, SpanOpts),
     log(info, "new connection (~s, ~p) (Idle:~p)", [Remote, self(), Idle]),
     {ok, State2} = handle(rpc9_init, [SrvId, NkPort], NkPort, State1),
     log(debug, "connection initialized"),
@@ -527,7 +527,7 @@ process_client_req(Cmd, Data, TId, NkPort, State) ->
         end
     end,
     Opts = #{parent=>none, user_uid=>UserId, session_id=>SessId, transport=>Transp},
-    nkserver_trace:new_span(SrvId, {nkrpc9_server_ws, request, Cmd}, Fun, Opts).
+    nkserver_trace:new_span(SrvId, {trace_nkrpc9_server_ws, request, Cmd}, Fun, Opts).
 
 
 %% @private
