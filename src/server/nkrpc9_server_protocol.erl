@@ -233,12 +233,14 @@ conn_init(NkPort) ->
     },
     Idle = maps:get(idle_timeout, Opts),
     SpanOpts = #{
-        session_id => SessId,
-        local => Local,
-        local_port => LocalPort,
-        remote => Remote,
-        remote_port => RemPort,
-        transport => Transp
+        metadata => #{
+            session_id => SessId,
+            local => Local,
+            local_port => LocalPort,
+            remote => Remote,
+            remote_port => RemPort,
+            transport => Transp
+        }
     },
     nkserver_trace:new_span(SrvId, {trace_nkrpc9_server, connection}, infinity, SpanOpts),
     log(info, "new connection (~s, ~p) (Idle:~p)", [Remote, self(), Idle]),
@@ -526,7 +528,10 @@ process_client_req(Cmd, Data, TId, NkPort, State) ->
                 send_reply_ok(Reply, TId, NkPort, apply_user_state(UserState2, State))
         end
     end,
-    Opts = #{parent=>none, user_uid=>UserId, session_id=>SessId, transport=>Transp},
+    Opts = #{
+        parent=>none,
+        metadata => #{user_uid=>UserId, session_id=>SessId, transport=>Transp}
+    },
     nkserver_trace:new_span(SrvId, {trace_nkrpc9_server_ws, request, Cmd}, Fun, Opts).
 
 

@@ -157,14 +157,16 @@ init(Method, Path, CowReq, NkPort) ->
         '_cowreq' => CowReq
     },
     SpanOpts = #{
-        session_id => SessionId,
-        local => Local,
-        local_port => LocalPort,
-        remote => Remote,
-        remote_port => RemPort,
-        content_type => CT,
-        method => Method,
-        path => cowboy_req:path(CowReq)
+        metadata => #{
+            session_id => SessionId,
+            local => Local,
+            local_port => LocalPort,
+            remote => Remote,
+            remote_port => RemPort,
+            content_type => CT,
+            method => Method,
+            path => cowboy_req:path(CowReq)
+        }
     },
     Fun = fun() ->
         try
