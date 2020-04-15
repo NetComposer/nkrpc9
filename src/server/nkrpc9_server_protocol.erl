@@ -24,7 +24,7 @@
 
 -export([send_request/3, send_async_request/3, reply/3, reply/4, send_event/3, server_event/2]).
 -export([start_ping/2, stop_ping/1]).
--export([stop/1, get_all/1]).
+-export([stop/1, stop/2, get_all/1]).
 -export([find_user/1, find_session/1]).
 -export([get_all_started/1, get_local_started/1]).
 
@@ -91,7 +91,11 @@ reply(Pid, TId, {status, Status}, StateFun) ->
     do_cast(Pid, {rpc9_reply_status, Status, TId, StateFun});
 
 reply(Pid, TId, {ack, AckPid}, StateFun) ->
-    do_cast(Pid, {rpc9_reply_ack, AckPid, TId, StateFun}).
+    do_cast(Pid, {rpc9_reply_ack, AckPid, TId, StateFun});
+
+reply(Pid, TId, {stop, Reason, Reply}, StateFun) ->
+    do_cast(Pid, {rpc9_reply_ok, Reply, TId, StateFun}),
+    stop(Pid, Reason).
 
 
 %% @doc Start sending pings
@@ -103,9 +107,15 @@ start_ping(Pid, MSecs) ->
 stop_ping(Pid) ->
     do_cast(Pid, rpc9_stop_ping).
 
+
 %% @doc
 stop(Pid) ->
-    do_cast(Pid, rpc9_stop).
+    stop(Pid, normal).
+
+
+%% @doc
+stop(Pid, Reason) ->
+    do_cast(Pid, {rpc9_stop, Reason}).
 
 
 %% @private
@@ -407,8 +417,8 @@ conn_handle_cast({rpc9_reply_ack, Pid, TId, Meta, StateFun}, NkPort, State) ->
             {ok, State}
     end;
 
-conn_handle_cast(rpc9_stop, _NkPort, State) ->
-    log(debug, "user stop"),
+conn_handle_cast({rpc9_stop, Reason}, _NkPort, State) ->
+    log(info, "user stop: ~p", [Reason]),
     {stop, normal, State};
 
 conn_handle_cast({rpc9_start_ping, MSecs}, _NkPort, #state{ping=Ping}=State) ->
