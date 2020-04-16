@@ -23,6 +23,7 @@
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 
 -export([send_request/3, send_async_request/3, reply/3, reply/4, send_event/3, server_event/2]).
+-export([add_monitor/4, rm_monitor/2]).
 -export([start_ping/2, stop_ping/1]).
 -export([stop/1, stop/2, get_all/1]).
 -export([find_user/1, find_session/1]).
@@ -96,6 +97,16 @@ reply(Pid, TId, {ack, AckPid}, StateFun) ->
 reply(Pid, TId, {stop, Reason, Reply}, StateFun) ->
     do_cast(Pid, {rpc9_reply_ok, Reply, TId, StateFun}),
     stop(Pid, Reason).
+
+
+%% @doc
+add_monitor(Pid, Id, ProcPid, Data) ->
+    do_cast(Pid, {rpc9_add_monitor, Id, ProcPid, Data}).
+
+
+%% @doc
+rm_monitor(Pid, Id) ->
+    do_cast(Pid, {rpc9_rm_monitor, Id}).
 
 
 %% @doc Start sending pings
@@ -184,6 +195,7 @@ find_session(SessId) ->
     remote :: binary(),
     remote_port :: integer(),
     transport :: atom(),
+    monitors :: [{reference(), term()}],
     user_id = <<>> :: nkservice:user_id(),
     user_state = #{} :: nkservice:user_state()
 }).
@@ -239,6 +251,7 @@ conn_init(NkPort) ->
         remote_port = RemPort,
         op_time = OpTime,
         ext_op_time = ExtTime,
+        monitors = [],
         user_state = UserState
     },
     Idle = maps:get(idle_timeout, Opts),
@@ -433,6 +446,14 @@ conn_handle_cast({rpc9_start_ping, MSecs}, _NkPort, #state{ping=Ping}=State) ->
 conn_handle_cast(rpc9_stop_ping, _NkPort, State) ->
     {ok, State#state{ping=undefined}};
 
+conn_handle_cast({rpc9_add_monitor, Id, Pid, Data}, _NkPort, State) ->
+    State2 = do_add_monitor(Id, Pid, Data, State),
+    {ok, State2};
+
+conn_handle_cast({rpc9_rm_monitor, Id}, _NkPort, State) ->
+    State2 = do_rm_monitor(Id, State),
+    {ok, State2};
+
 conn_handle_cast(Msg, NkPort, State) ->
     handle(rpc9_handle_cast, [Msg], NkPort, State).
 
@@ -469,7 +490,12 @@ conn_handle_info({'DOWN', Ref, process, Pid, Reason}=Info, NkPort, State) ->
                   [Op, TId, Pid, Reason]),
             send_reply_error(process_down, TId, NkPort, State2);
         false ->
-            handle(rpc9_handle_info, [Info], NkPort, State)
+            case extract_user_mon(Ref, State) of
+                {true, Id, Data, State2} ->
+                    handle(rpc9_monitor_down, [Id, Data], NkPort, State2);
+                false ->
+                    handle(rpc9_handle_info, [Info], NkPort, State)
+            end
     end;
 
 conn_handle_info(Info, NkPort, State) ->
@@ -676,12 +702,22 @@ extract_op(TId, #state{trans=AllTrans}=State) ->
     end.
 
 %% @private
-extract_op_mon(Mon, #state{trans=AllTrans}=State) ->
-    case [TId || {TId, #trans{mon=M}} <- maps:to_list(AllTrans), M==Mon] of
+extract_op_mon(Ref, #state{trans=AllTrans}=State) ->
+    case [TId || {TId, #trans{mon=M}} <- maps:to_list(AllTrans), M==Ref] of
         [TId] ->
             {OldTrans, State2} = extract_op(TId, State),
             {true, TId, OldTrans, State2};
         [] ->
+            false
+    end.
+
+
+%% @private
+extract_user_mon(Ref, #state{monitors=Mons}=State) ->
+    case lists:keytake(Ref, 1, Mons) of
+        {value, {Ref, Id, Data}, Mons2} ->
+            {true, Id, Data, State#state{monitors=Mons2}};
+        false ->
             false
     end.
 
@@ -797,6 +833,26 @@ send(Msg, NkPort, State) ->
 %% @private
 send(Msg, NkPort) ->
     nkpacket_connection:send(NkPort, Msg).
+
+
+%% @private
+do_add_monitor(Id, Pid, Data, State) ->
+    State2 = do_rm_monitor(Id, State),
+    Ref = erlang:monitor(process, Pid),
+    #state{monitors = Mons} = State2,
+    Mons2 = [{Ref, Id, Data}|Mons],
+    State#state{monitors = Mons2}.
+
+
+%% @private
+do_rm_monitor(Id, #state{monitors=Mons}=State) ->
+    case lists:keytake(Id, 2, Mons) of
+        {value, {Ref, Id, _Data}, Mons2} ->
+            erlang:demonitor(Ref),
+            State#state{monitors = Mons2};
+        false ->
+            State
+    end.
 
 
 %%%% @private

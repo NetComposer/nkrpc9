@@ -22,7 +22,8 @@
 -module(nkrpc9_server_callbacks).
 -author('Carlos Gonzalez <carlosj.gf@gmail.com>').
 -export([msg/1]).
--export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/4, rpc9_result/5]).
+-export([rpc9_parse/4, rpc9_allow/4, rpc9_request/4, rpc9_event/4, rpc9_result/5,
+         rpc9_monitor_down/3]).
 -export([rpc9_init/3, rpc9_handle_call/3, rpc9_handle_cast/2, rpc9_handle_info/2,
          rpc9_terminate/2]).
 -export([rpc9_http/3]).
@@ -129,6 +130,14 @@ rpc9_event(_Event, _Data, _Req, State) ->
 
 rpc9_result(Result, Data, _Op, _From, State) ->
     {reply, Result, Data, State}.
+
+
+%% @doc Called when the process receives a handle_info/3.
+-spec rpc9_monitor_down(term(), term(), state()) ->
+    {ok, state()} | continue().
+
+rpc9_monitor_down(_Id, _Data, State) ->
+    {ok, State}.
 
 
 %% @doc Called when a new connection starts
