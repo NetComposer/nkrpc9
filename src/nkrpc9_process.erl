@@ -53,7 +53,7 @@ result(SrvId, Result, Data, Op, From, State) ->
 %% @private
 request_parse(SrvId, Cmd, Data, Req, State) ->
     trace("calling rpc9_parse"),
-    log(info, "data is ~p", [Cmd]),
+    log(info, "data is ~p", [Data]),
     case ?CALL_SRV(SrvId, rpc9_parse, [Cmd, Data, Req, State]) of
         {syntax, Syntax} ->
             case nklib_syntax:parse(Data, Syntax) of
