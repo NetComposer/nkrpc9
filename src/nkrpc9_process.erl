@@ -53,15 +53,19 @@ result(SrvId, Result, Data, Op, From, State) ->
 %% @private
 request_parse(SrvId, Cmd, Data, Req, State) ->
     trace("calling rpc9_parse"),
+    log(info, "data is ~p", [Cmd]),
     case ?CALL_SRV(SrvId, rpc9_parse, [Cmd, Data, Req, State]) of
         {syntax, Syntax} ->
             case nklib_syntax:parse(Data, Syntax) of
                 {ok, Data2, []} ->
+                    log(info, "parsed is ~p", [Data2]),
                     request_allow(SrvId, Cmd, Data2, Req, State);
                 {ok, Data2, Unknown} ->
+                    log(info, "parsed is ~p (unknown: ~p)", [Data2, Unknown]),
                     Req2 = Req#{unknown_fields => Unknown},
                     request_allow(SrvId, Cmd, Data2, Req2, State);
                 {error, Error} ->
+                    log(info, "parse error: ~p", [Error]),
                     {error, Error, State}
             end;
         {syntax, Syntax, State2} ->
